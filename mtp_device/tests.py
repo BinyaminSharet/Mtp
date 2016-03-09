@@ -3,14 +3,14 @@ import unittest
 from mtp_device import MtpDevice, MtpDeviceInfo, MtpRequest, MtpResponse
 from mtp_storage import MtpStorage, MtpStorageInfo
 from mtp_object import MtpObject
-from mtp_proto import OperationDataCodes, ResponseCodes
+from mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps
 
 
 class MtpDeviceApiTests(unittest.TestCase):
 
     def setUp(self):
         super(MtpDeviceApiTests, self).setUp()
-        self.objects = MtpObject.from_fs_recursive('.')
+        self.object = MtpObject.from_fs_recursive('.')
         self.storage_info = MtpStorageInfo(
             st_type=0,
             fs_type=0,
@@ -22,7 +22,7 @@ class MtpDeviceApiTests(unittest.TestCase):
             vol_id='Python MTP Device Stack',
         )
         self.storage = MtpStorage(self.storage_info)
-        self.storage.add_object(self.objects)
+        self.storage.add_object(self.object)
         self.dev_info = MtpDeviceInfo(
             std_version=0x0102,
             mtp_vendor_ext_id=0x03040506,
@@ -196,6 +196,24 @@ class MtpDeviceApiTests(unittest.TestCase):
         self.dev.GetNumObjects(request, response)
         self.assertEqual(response.status, ResponseCodes.OK)
 
+    def test_GetNumObjectsSameTwoCalls(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = MtpResponse(request)
+        data1 = self.dev.GetNumObjects(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
+        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = MtpResponse(request)
+        data2 = self.dev.GetNumObjects(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
+        self.assertEqual(data1, data2)
+
     def test_GetNumObjectsWithoutStorageId(self):
         session_id = 1
         request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
@@ -269,7 +287,7 @@ class MtpDeviceApiTests(unittest.TestCase):
         response = MtpResponse(request)
         self.dev.OpenSession(request, response)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectInfo, [self.objects.get_uid()])
+        request = MtpRequest(2, OperationDataCodes.GetObjectInfo, [self.object.get_uid()])
         response = MtpResponse(request)
         self.dev.GetObjectInfo(request, response)
         self.assertEqual(response.status, ResponseCodes.OK)
@@ -308,7 +326,7 @@ class MtpDeviceApiTests(unittest.TestCase):
         response = MtpResponse(request)
         self.dev.OpenSession(request, response)
 
-        request = MtpRequest(2, OperationDataCodes.GetObject, [self.objects.get_uid()])
+        request = MtpRequest(2, OperationDataCodes.GetObject, [self.object.get_uid()])
         response = MtpResponse(request)
         self.dev.GetObject(request, response)
         self.assertEqual(response.status, ResponseCodes.OK)
@@ -334,6 +352,81 @@ class MtpDeviceApiTests(unittest.TestCase):
         response = MtpResponse(request)
         self.dev.GetObject(request, response)
         self.assertEqual(response.status, ResponseCodes.INVALID_OBJECT_HANDLE)
+
+    def test_DeleteObjectBeforeOpenSession(self):
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.storage.get_uid()])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_DeleteObjectAfterOpenSession(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.object.get_uid()])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
+    def test_DeleteObjectInReadOnlyStorage(self):
+        self.storage.info.access = AccessCaps.READ_ONLY_WITHOUT_DELETE
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.object.get_uid()])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.OBJECT_WRITE_PROTECTED)
+
+    def test_DeleteObjectWithoutObjectHandle(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_DeleteObjectWithInvalidObjectHandle(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [0xfffffffe])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.INVALID_OBJECT_HANDLE)
+
+    def test_DeleteObjectRemovesTheObject(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = MtpResponse(request)
+        data1 = self.dev.GetNumObjects(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.object.objects[0].get_uid()])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
+        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = MtpResponse(request)
+        data2 = self.dev.GetNumObjects(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
+        self.assertNotEqual(data1, data2)
+
 
 if __name__ == '__main__':
     unittest.main()

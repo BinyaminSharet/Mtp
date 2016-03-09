@@ -1,5 +1,5 @@
 from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from mtp_proto import MU16, MU32, MU64, MStr
+from mtp_proto import MU16, MU32, MU64, MStr, AccessCaps
 
 
 class MtpStorage(MtpObjectContainer):
@@ -20,6 +20,12 @@ class MtpStorage(MtpObjectContainer):
         for obj in self.objects:
             handles.extend(obj.get_handles())
         return handles
+
+    def can_delete(self):
+        return self.info.access in [AccessCaps.READ_WRITE, AccessCaps.READ_ONLY_WITH_DELETE]
+
+    def can_write(self):
+        return self.info.access == AccessCaps.READ_WRITE
 
 
 class MtpStorageInfo(MtpEntityInfoInterface):

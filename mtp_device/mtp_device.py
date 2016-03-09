@@ -1,13 +1,7 @@
 from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
 from mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data
+from mtp_exception import MtpProtocolException
 from struct import unpack
-
-
-class MtpProtocolException(Exception):
-
-    def __init__(self, response, msg=None):
-        super(MtpProtocolException, self).__init__(msg)
-        self.response = response
 
 
 operations = {}
@@ -166,8 +160,40 @@ class MtpDevice(MtpObjectContainer):
         obj = self.get_object(handle)
         return mtp_data(request, obj.data)
 
-    # @operation(OperationDataCodes.GetThumb, num_params=1)
-    # def GetThumb(self, request):
+    @operation(OperationDataCodes.GetThumb, num_params=1)
+    def GetThumb(self, request):
+        handle = request.get_param(0)
+        obj = self.get_object(handle)
+        return mtp_data(request, obj.get_thumb())
+
+    @operation(OperationDataCodes.DeleteObject, num_params=1)
+    def DeleteObject(self, request):
+        handle = request.get_param(0)
+        obj_fmt_code = request.get_param(1)
+        if handle == 0xffffffff:
+            self.delete_all_objects(obj_fmt_code)
+        else:
+            obj = self.get_object(handle)
+            obj.delete(0xffffffff)
+
+    def delete_all_objects(self, obj_fmt_code):
+        deleted = False
+        undeleted = False
+        for store in self.stores:
+            objects = store.objects[:]
+            for obj in objects:
+                try:
+                    obj.delete(obj_fmt_code)
+                    deleted = True
+                except MtpProtocolException as ex:
+                    if ex.status == ResponseCodes.PARTIAL_DELETION:
+                        deleted = True
+                    undeleted = True
+        if undeleted:
+            if deleted:
+                raise MtpProtocolException(ResponseCodes.OBJECT_WRITE_PROTECTED)
+            else:
+                raise MtpProtocolException(ResponseCodes.PARTIAL_DELETION)
 
     def get_handles_from_stores(self, stores, obj_fmt_code):
         '''

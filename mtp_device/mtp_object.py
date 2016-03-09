@@ -3,28 +3,67 @@ The object's binary data, the ObjectInfo dataset,
 Object Properties and Object References
 '''
 from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from mtp_proto import MU32, MU16, MStr, MDateTime
+from mtp_proto import MU32, MU16, MStr, MDateTime, ResponseCodes
+from mtp_exception import MtpProtocolException
 import os
 
 
 class MtpObject(MtpObjectContainer):
 
-    def __init__(self, data, info, properties, references):
+    def __init__(self, data, info, properties):
         super(MtpObject, self).__init__(info)
         self.data = data
         self.properties = properties
-        self.references = references
         self.real_path = None
 
     def set_storage(self, storage):
         self.info.storage = storage
         # TODO: recursion loop??
-        for obj in self.references:
+        for obj in self.objects:
             obj.set_storage(storage)
 
-    def add_reference(self, obj):
-        self.references.append(obj)
-        obj.set_storage(self.info.storage)
+    def get_thumb(self, obj):
+        raise MtpProtocolException(ResponseCodes.NO_THUMBNAIL_PRESENT)
+
+    def format_matches(self, fmt):
+        return (
+            fmt == self.info.object_format or
+            fmt == 0xffffffff or
+            self.info.object_format == 0x00000000
+        )
+
+    def delete_self(self, fmt):
+        '''
+        .. todo:: actual deletion ??
+        '''
+        if not self.format_matches(fmt):
+            raise MtpProtocolException(ResponseCodes.SPECIFICATION_BY_FORMAT_UNSUPPORTED)
+        if self.parent:
+            self.parent.objects.remove(self)
+        else:
+            self.info.storage.objects.remove(self)
+
+    def delete_internal(self, fmt):
+        objects = self.objects[:]
+        deleted_count = 0
+        undeleted_count = 0
+        for obj in objects:
+            try:
+                obj.delete(fmt)
+                deleted_count += 1
+            except MtpProtocolException:
+                undeleted_count += 1
+        if undeleted_count:
+            if deleted_count:
+                raise MtpProtocolException(ResponseCodes.OBJECT_WRITE_PROTECTED)
+            else:
+                raise MtpProtocolException(ResponseCodes.PARTIAL_DELETION)
+        self.delete_self(fmt)
+
+    def delete(self, fmt):
+        if not self.info.storage.can_delete():
+            raise MtpProtocolException(ResponseCodes.OBJECT_WRITE_PROTECTED)
+        self.delete_internal(fmt)
 
     @classmethod
     def from_fs_recursive(cls, path):
@@ -34,7 +73,7 @@ class MtpObject(MtpObjectContainer):
             for filename in os.listdir(path):
                 new_path = os.path.join(path, filename)
                 new_obj = MtpObject.from_fs_recursive(new_path)
-                obj.add_reference(new_obj)
+                obj.add_object(new_obj)
         return obj
 
     @classmethod
@@ -73,7 +112,6 @@ class MtpObject(MtpObjectContainer):
             data=data,
             info=info,
             properties=[],
-            references=[]
         )
         obj.real_path = path
         return obj
