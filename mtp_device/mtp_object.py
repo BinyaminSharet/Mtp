@@ -2,12 +2,12 @@
 The object's binary data, the ObjectInfo dataset,
 Object Properties and Object References
 '''
-from mtp_base import MtpEntity, MtpEntityInfoInterface
+from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
 from mtp_proto import MU32, MU16, MStr, MDateTime
 import os
 
 
-class MtpObject(MtpEntity):
+class MtpObject(MtpObjectContainer):
 
     def __init__(self, data, info, properties, references):
         super(MtpObject, self).__init__(info)
@@ -41,7 +41,8 @@ class MtpObject(MtpEntity):
     def from_file(cls, path):
         # TODO: handle cases othe than regular file here ...
         if os.path.isfile(path):
-            data = open(path, 'rb').read()
+            with open(path, 'rb') as f:
+                data = f.read()
         else:
             data = b''
         filename = os.path.split(path)[-1]

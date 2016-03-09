@@ -21,7 +21,7 @@ class MtpEntity(object):
         self.info = info
 
     def get_handles(self):
-        return [self]
+        return [self.get_uid()]
 
     def get_uid(self):
         return self.uid

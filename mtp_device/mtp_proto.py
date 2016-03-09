@@ -1,4 +1,3 @@
-from enum import IntEnum
 from struct import pack, unpack
 import datetime
 
@@ -202,3 +201,16 @@ def MS64(i):
 
 def MU64(i):
     return pack('<Q', i)
+
+
+def mtp_response(container, status):
+    tid = 0 if not container else container.tid
+    return MU32(0xC) + MU16(ContainerTypes.Response) + MU16(status) + MU32(tid)
+
+
+def mtp_error(container, status):
+    return (None, mtp_response(container, status))
+
+
+def mtp_data(container, data):
+    return MU32(len(data) + 0xC) + MU16(ContainerTypes.Data) + MU16(container.code) + MU32(container.tid) + data

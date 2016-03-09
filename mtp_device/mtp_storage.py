@@ -15,6 +15,12 @@ class MtpStorage(MtpObjectContainer):
     def set_device(self, dev):
         self.dev = dev
 
+    def get_handles(self):
+        handles = super(MtpObjectContainer, self).get_handles()
+        for obj in self.objects:
+            handles.extend(obj.get_handles())
+        return handles
+
 
 class MtpStorageInfo(MtpEntityInfoInterface):
 
