@@ -113,7 +113,7 @@ class MtpDevice(MtpObjectContainer):
 
     @operation(OperationDataCodes.GetStorageIDs, num_params=0)
     def GetStorageIDs(self, request):
-        ids = self.stores.keys()
+        ids = list(self.stores.keys())
         data = MArray(MU32, ids)
         return mtp_data(request, data)
 
@@ -126,12 +126,8 @@ class MtpDevice(MtpObjectContainer):
     @operation(OperationDataCodes.GetNumObjects, num_params=1)
     def GetNumObjects(self, request):
         storage_id = request.get_param(0)
-        if storage_id == 0xffffffff:
-            relevant_store = self.stores.values()
-        else:
-            relevant_store = [self.get_storage(storage_id)]
         obj_fmt_code = request.get_param(1)
-        handles = self.get_handles_from_stores(relevant_store, obj_fmt_code)
+        handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         # .. todo:: assoc_handle filtering
         # assoc_handle = request.get_param(2)
         return mtp_data(request, MU32(len(handles)))
@@ -139,12 +135,8 @@ class MtpDevice(MtpObjectContainer):
     @operation(OperationDataCodes.GetObjectHandles, num_params=1)
     def GetObjectHandles(self, request):
         storage_id = request.get_param(0)
-        if storage_id == 0xffffffff:
-            relevant_store = self.stores.values()
-        else:
-            relevant_store = [self.get_storage(storage_id)]
         obj_fmt_code = request.get_param(1)
-        handles = self.get_handles_from_stores(relevant_store, obj_fmt_code)
+        handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         # .. todo:: assoc_handle filtering
         # assoc_handle = request.get_param(2)
         return mtp_data(request, MArray(MU32, handles))
@@ -180,7 +172,7 @@ class MtpDevice(MtpObjectContainer):
     def delete_all_objects(self, obj_fmt_code):
         deleted = False
         undeleted = False
-        for store in self.stores:
+        for store in self.stores.values():
             objects = store.objects[:]
             for obj in objects:
                 try:
@@ -196,14 +188,18 @@ class MtpDevice(MtpObjectContainer):
             else:
                 raise MtpProtocolException(ResponseCodes.PARTIAL_DELETION)
 
-    def get_handles_from_stores(self, stores, obj_fmt_code):
+    def get_handles_for_store_id(self, storage_id, obj_fmt_code):
         '''
         :param stores: stores to search in
         :param obj_fmt_code: format to filter objects by
         :return: list of handles
         '''
         res = []
-        for store in stores:
+        if storage_id == 0xffffffff:
+            relevant_store = list(self.stores.values())
+        else:
+            relevant_store = [self.get_storage(storage_id)]
+        for store in relevant_store:
             handles = store.get_handles()
             if obj_fmt_code:
                 handles = [h for h in handles if store.get_object(h).get_fmt() == obj_fmt_code]

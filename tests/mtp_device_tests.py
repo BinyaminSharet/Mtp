@@ -380,6 +380,17 @@ class MtpDeviceApiTests(unittest.TestCase):
         self.dev.DeleteObject(request, response)
         self.assertEqual(response.status, ResponseCodes.OK)
 
+    def test_DeleteObjectWildcardStorageIdAfterOpenSession(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.DeleteObject, [0xffffffff])
+        response = MtpResponse(request)
+        self.dev.DeleteObject(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
     def test_DeleteObjectInReadOnlyStorage(self):
         self.storage.info.access = AccessCaps.READ_ONLY_WITHOUT_DELETE
         session_id = 1
