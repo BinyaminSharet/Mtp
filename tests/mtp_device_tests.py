@@ -508,3 +508,11 @@ class MtpRequestTest(unittest.TestCase):
     def testInvalidLengthNotMultipleOfFour(self):
         buff = unhexlify('0d0000000100010002000000ff')
         self.invalidBufferTest(buff)
+
+    def testInvalidRequestTooshort(self):
+        buff = unhexlify('0800000001000100')
+        self.invalidBufferTest(buff)
+
+    def testInvalidContainerTypeNotCommand(self):
+        buff = unhexlify('0c0000000200010002000000')
+        self.invalidBufferTest(buff)
