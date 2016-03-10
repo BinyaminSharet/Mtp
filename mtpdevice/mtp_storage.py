@@ -17,7 +17,7 @@ class MtpStorage(MtpObjectContainer):
         self.dev = dev
 
     def get_handles(self):
-        handles = super(MtpObjectContainer, self).get_handles()
+        handles = []
         for obj in self.objects:
             handles.extend(obj.get_handles())
         return handles

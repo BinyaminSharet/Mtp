@@ -1,17 +1,31 @@
 import unittest
-from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo, MtpRequest, MtpResponse
+from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo
 from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps, ContainerTypes
 from mtpdevice.mtp_exception import MtpProtocolException
+from mtpdevice.mtp_msg import MtpParametersMessage, msg_from_buff, response_from_command
 from binascii import unhexlify
 from struct import pack
 
 
-class MtpDeviceApiTests(unittest.TestCase):
+def command_message(tid, code, params=None):
+    params = params if params else []
+    length = 0xc + len(params) * 4
+    data = b''
+    for p in params:
+        data += pack('<I', p)
+    return MtpParametersMessage(length, ContainerTypes.Command, code, tid, data)
+
+
+def response_message(cmd):
+    return response_from_command(cmd, ResponseCodes.OK)
+
+
+class MtpDeviceTests(unittest.TestCase):
 
     def setUp(self):
-        super(MtpDeviceApiTests, self).setUp()
+        super(MtpDeviceTests, self).setUp()
         self.object = MtpObject.from_fs_recursive('.')
         self.storage_info = MtpStorageInfo(
             st_type=0,
@@ -46,473 +60,407 @@ class MtpDeviceApiTests(unittest.TestCase):
 
     def test_OpenSessionWithSessionId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
         self.assertEqual(self.dev.session_id, session_id)
 
     def test_OpenSessionWithoutParams(self):
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(1, OperationDataCodes.OpenSession, [])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
         self.assertIsNone(self.dev.session_id)
 
     def test_OpenSessionTwice(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
         self.assertEqual(self.dev.session_id, session_id)
 
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id + 1])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_ALREADY_OPEN)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id + 1])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_ALREADY_OPEN)
         self.assertEqual(self.dev.session_id, session_id)
 
     def test_CloseSessionAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(1, OperationDataCodes.CloseSession, [])
-        response = MtpResponse(request)
-        self.dev.CloseSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(1, OperationDataCodes.CloseSession, [])
+        response = response_message(request)
+        self.dev.CloseSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
         self.assertIsNone(self.dev.session_id)
 
     def test_CloseSessionBeforeOpenSession(self):
-        request = MtpRequest(1, OperationDataCodes.CloseSession, [])
-        response = MtpResponse(request)
-        self.dev.CloseSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(1, OperationDataCodes.CloseSession, [])
+        response = response_message(request)
+        self.dev.CloseSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_CloseSessionAfterCloseSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(1, OperationDataCodes.CloseSession, [])
-        response = MtpResponse(request)
-        self.dev.CloseSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(1, OperationDataCodes.CloseSession, [])
+        response = response_message(request)
+        self.dev.CloseSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
         self.assertIsNone(self.dev.session_id)
 
-        request = MtpRequest(1, OperationDataCodes.CloseSession, [])
-        response = MtpResponse(request)
-        self.dev.CloseSession(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(1, OperationDataCodes.CloseSession, [])
+        response = response_message(request)
+        self.dev.CloseSession(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetDeviceInfoBeforeOpenSession(self):
-        request = MtpRequest(1, OperationDataCodes.GetDeviceInfo, [])
-        response = MtpResponse(request)
-        self.dev.GetDeviceInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(1, OperationDataCodes.GetDeviceInfo, [])
+        response = response_message(request)
+        self.dev.GetDeviceInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetDeviceInfoAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetDeviceInfo, [])
-        response = MtpResponse(request)
-        self.dev.GetDeviceInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetDeviceInfo, [])
+        response = response_message(request)
+        self.dev.GetDeviceInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetStorageIDsAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetStorageIDs, [])
-        response = MtpResponse(request)
-        self.dev.GetStorageIDs(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetStorageIDs, [])
+        response = response_message(request)
+        self.dev.GetStorageIDs(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetStorageIDsBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.GetStorageIDs, [])
-        response = MtpResponse(request)
-        self.dev.GetStorageIDs(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.GetStorageIDs, [])
+        response = response_message(request)
+        self.dev.GetStorageIDs(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetStorageInfoAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetStorageInfo, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetStorageInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetStorageInfo, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetStorageInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetStorageInfoBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.GetStorageInfo, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetStorageInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.GetStorageInfo, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetStorageInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetStorageInfoWithoutStorageId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetStorageInfo, [])
-        response = MtpResponse(request)
-        self.dev.GetStorageInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(2, OperationDataCodes.GetStorageInfo, [])
+        response = response_message(request)
+        self.dev.GetStorageInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     def test_GetStorageInfoWithInvalidStorageId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetStorageInfo, [self.storage.get_uid() + 1])
-        response = MtpResponse(request)
-        self.dev.GetStorageInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.INVALID_STORAGE_ID)
+        request = command_message(2, OperationDataCodes.GetStorageInfo, [self.storage.get_uid() + 1])
+        response = response_message(request)
+        self.dev.GetStorageInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.INVALID_STORAGE_ID)
 
     def test_GetNumObjectsBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetNumObjectsAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetNumObjectsSameTwoCalls(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        data1 = self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = response_message(request)
+        data1 = self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        data2 = self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = response_message(request)
+        data2 = self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
         self.assertEqual(data1, data2)
 
     def test_GetNumObjectsWithoutStorageId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [])
-        response = MtpResponse(request)
-        self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [])
+        response = response_message(request)
+        self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     def test_GetNumObjectsWithInvalidStorageId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid() + 1])
-        response = MtpResponse(request)
-        self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.INVALID_STORAGE_ID)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid() + 1])
+        response = response_message(request)
+        self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.INVALID_STORAGE_ID)
 
     def test_GetObjectHandlesBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.GetObjectHandles, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetObjectHandles(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.GetObjectHandles, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetObjectHandles(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetObjectHandlesAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectHandles, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetObjectHandles(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetObjectHandles, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetObjectHandles(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetObjectHandlesWildcardStorageIdAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectHandles, [0xffffffff])
-        response = MtpResponse(request)
-        self.dev.GetObjectHandles(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetObjectHandles, [0xffffffff])
+        response = response_message(request)
+        self.dev.GetObjectHandles(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetObjectHandlesWithoutStorageId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectHandles, [])
-        response = MtpResponse(request)
-        self.dev.GetObjectHandles(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(2, OperationDataCodes.GetObjectHandles, [])
+        response = response_message(request)
+        self.dev.GetObjectHandles(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     def test_GetObjectHandlesWithInvalidStorageId(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectHandles, [self.storage.get_uid() + 1])
-        response = MtpResponse(request)
-        self.dev.GetObjectHandles(request, response)
-        self.assertEqual(response.status, ResponseCodes.INVALID_STORAGE_ID)
+        request = command_message(2, OperationDataCodes.GetObjectHandles, [self.storage.get_uid() + 1])
+        response = response_message(request)
+        self.dev.GetObjectHandles(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.INVALID_STORAGE_ID)
 
     def test_GetObjectInfoBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.GetObjectInfo, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetObjectInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.GetObjectInfo, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetObjectInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetObjectInfoAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectInfo, [self.object.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetObjectInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetObjectInfo, [self.object.get_uid()])
+        response = response_message(request)
+        self.dev.GetObjectInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetObjectInfoWithoutObjectHandle(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectInfo, [])
-        response = MtpResponse(request)
-        self.dev.GetObjectInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(2, OperationDataCodes.GetObjectInfo, [])
+        response = response_message(request)
+        self.dev.GetObjectInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     def test_GetObjectInfoWithInvalidObjectHandle(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObjectInfo, [0xfffffffe])
-        response = MtpResponse(request)
-        self.dev.GetObjectInfo(request, response)
-        self.assertEqual(response.status, ResponseCodes.INVALID_OBJECT_HANDLE)
+        request = command_message(2, OperationDataCodes.GetObjectInfo, [0xfffffffe])
+        response = response_message(request)
+        self.dev.GetObjectInfo(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.INVALID_OBJECT_HANDLE)
 
     def test_GetObjectBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.GetObject, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.GetObject, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.GetObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_GetObjectAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObject, [self.object.get_uid()])
-        response = MtpResponse(request)
-        self.dev.GetObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetObject, [self.object.get_uid()])
+        response = response_message(request)
+        self.dev.GetObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_GetObjectWithoutObjectHandle(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObject, [])
-        response = MtpResponse(request)
-        self.dev.GetObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(2, OperationDataCodes.GetObject, [])
+        response = response_message(request)
+        self.dev.GetObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     def test_GetObjectWithInvalidObjectHandle(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetObject, [0xfffffffe])
-        response = MtpResponse(request)
-        self.dev.GetObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.INVALID_OBJECT_HANDLE)
+        request = command_message(2, OperationDataCodes.GetObject, [0xfffffffe])
+        response = response_message(request)
+        self.dev.GetObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.INVALID_OBJECT_HANDLE)
 
     def test_DeleteObjectBeforeOpenSession(self):
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.SESSION_NOT_OPEN)
+        request = command_message(2, OperationDataCodes.DeleteObject, [self.storage.get_uid()])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
 
     def test_DeleteObjectAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.object.get_uid()])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.DeleteObject, [self.object.get_uid()])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_DeleteObjectWildcardStorageIdAfterOpenSession(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [0xffffffff])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.DeleteObject, [0xffffffff])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
     def test_DeleteObjectInReadOnlyStorage(self):
         self.storage.info.access = AccessCaps.READ_ONLY_WITHOUT_DELETE
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.object.get_uid()])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.OBJECT_WRITE_PROTECTED)
+        request = command_message(2, OperationDataCodes.DeleteObject, [self.object.get_uid()])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OBJECT_WRITE_PROTECTED)
 
     def test_DeleteObjectWithoutObjectHandle(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+        request = command_message(2, OperationDataCodes.DeleteObject, [])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     def test_DeleteObjectWithInvalidObjectHandle(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [0xfffffffe])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.INVALID_OBJECT_HANDLE)
+        request = command_message(2, OperationDataCodes.DeleteObject, [0xfffffffe])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.INVALID_OBJECT_HANDLE)
 
     def test_DeleteObjectRemovesTheObject(self):
         session_id = 1
-        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
-        response = MtpResponse(request)
-        self.dev.OpenSession(request, response)
+        request = command_message(1, OperationDataCodes.OpenSession, [session_id])
+        response = response_message(request)
+        self.dev.OpenSession(request, response, None)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        data1 = self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = response_message(request)
+        data1 = self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
-        request = MtpRequest(2, OperationDataCodes.DeleteObject, [self.object.objects[0].get_uid()])
-        response = MtpResponse(request)
-        self.dev.DeleteObject(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.DeleteObject, [self.object.objects[0].get_uid()])
+        response = response_message(request)
+        self.dev.DeleteObject(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
-        request = MtpRequest(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
-        response = MtpResponse(request)
-        data2 = self.dev.GetNumObjects(request, response)
-        self.assertEqual(response.status, ResponseCodes.OK)
+        request = command_message(2, OperationDataCodes.GetNumObjects, [self.storage.get_uid()])
+        response = response_message(request)
+        data2 = self.dev.GetNumObjects(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
 
         self.assertNotEqual(data1, data2)
-
-
-class MtpRequestTest(unittest.TestCase):
-
-    def buildVanillabuffer(self, code, tid, params):
-        length = len(params) * 4 + 0xc
-        ctype = ContainerTypes.Command
-        buff = pack('<IHHI', length, ctype, code, tid)
-        for param in params:
-            buff += pack('<I', param)
-        return buff
-
-    def vanillaTest(self, code, tid, params):
-        buff = self.buildVanillabuffer(code, tid, params)
-        request = MtpRequest.from_buff(buff)
-        self.assertEqual(request.code, code)
-        self.assertEqual(request.tid, tid)
-        self.assertEqual(request.params, params)
-        self.assertEqual(request.num_params(), len(params))
-        for i in range(len(params)):
-            self.assertEqual(request.get_param(i), params[i])
-        for i in range(len(params), len(params) + 5):
-            self.assertIsNone(request.get_param(i))
-
-    def testCorrectValuesFromBufferNoParams(self):
-        self.vanillaTest(1, 2, [])
-
-    def testCorrectValuesFromBufferSingleParam(self):
-        self.vanillaTest(1, 2, [0x12345678])
-
-    def testCorrectValuesFromBufferMultipleParams(self):
-        self.vanillaTest(1, 2, [0x01020304, 0x11121314, 0x21222324, 0x31323334, 0x41424344])
-
-    def invalidBufferTest(self, buff, expected_response=ResponseCodes.INVALID_CODE_FORMAT):
-        with self.assertRaises(MtpProtocolException) as cm:
-            MtpRequest.from_buff(buff)
-        if expected_response is not None:
-            self.assertEqual(cm.exception.response, expected_response)
-
-    def testInvalidLengthTooLongNoParams(self):
-        buff = unhexlify('100000000100010002000000')
-        self.invalidBufferTest(buff)
-
-    def testInvalidLengthTooShortNoParams(self):
-        buff = unhexlify('080000000100010002000000')
-        self.invalidBufferTest(buff)
-
-    def testInvalidLengthTooLongWithParams(self):
-        buff = unhexlify('14000000010001000200000011111111')
-        self.invalidBufferTest(buff)
-
-    def testInvalidLengthTooShortWithParams(self):
-        buff = unhexlify('0c000000010001000200000011111111')
-        self.invalidBufferTest(buff)
-
-    def testInvalidLengthNotMultipleOfFour(self):
-        buff = unhexlify('0d0000000100010002000000ff')
-        self.invalidBufferTest(buff)
-
-    def testInvalidRequestTooshort(self):
-        buff = unhexlify('0800000001000100')
-        self.invalidBufferTest(buff)
-
-    def testInvalidContainerTypeNotCommand(self):
-        buff = unhexlify('0c0000000200010002000000')
-        self.invalidBufferTest(buff)

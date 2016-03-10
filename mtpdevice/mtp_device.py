@@ -2,83 +2,49 @@ from __future__ import absolute_import
 from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
 from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
 from .mtp_exception import MtpProtocolException
-from struct import unpack
 
 
 operations = {}
 
 
-def operation(opcode, num_params=None, session_required=True):
+class Operation(object):
+    def __init__(self, handler, ir_data=False):
+        self.handler = handler
+        self.ir_data = ir_data
+
+
+def operation(opcode, num_params=None, session_required=True, ir_data_required=False):
     '''
     Decorator for an API operation function
 
     :param opcode: operation code
     :param num_params: number of parameter the operation expects (default: None)
     :param session_required: is the operation requires a session (default: True)
+    :param ir_data_required: is data expected from the initiator (default: False)
     '''
 
     def decorator(func):
-
-        def wrapper(self, request, response):
+        def wrapper(self, request, response, ir_data):
             try:
                 if num_params is not None:
+                    if request.ctype != ContainerTypes.Command:
+                        raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT)
                     if request.num_params() < num_params:
                         raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
                 if session_required and (self.session_id is None):
                     raise MtpProtocolException(ResponseCodes.SESSION_NOT_OPEN)
-                res = func(self, request)
+                res = func(self, request, ir_data)
             except MtpProtocolException as ex:
-                response.status = ex.response
+                response.code = ex.response
                 res = None
             return res
 
         if opcode in operations:
             raise Exception('operation %#x already defined', opcode)
-        operations[opcode] = wrapper
+        operations[opcode] = Operation(wrapper, ir_data_required)
         return wrapper
 
     return decorator
-
-
-class MtpRequest(object):
-
-    def __init__(self, tid, code, params):
-        self.tid = tid
-        self.code = code
-        self.params = params
-
-    def num_params(self):
-        return len(self.params)
-
-    def get_param(self, idx):
-        if idx < len(self.params):
-            return self.params[idx]
-        return None
-
-    @classmethod
-    def from_buff(cls, data):
-        if len(data) % 4 != 0:
-            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'request length (%#x) is not a multiple of four' % (len(data)))
-        if len(data) < 0xc:
-            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'request too short')
-        length, ctype, opcode, tid = unpack('<IHHI', data[:0xc])
-        if ctype != ContainerTypes.Command:
-            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'message is not a command (container type: %#x)' % (ctype))
-        if len(data) != length:
-            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'request length (%#x) != actual length (%#x)' % (length, len(data)))
-        params_buff = data[0xc:]
-        params = []
-        for i in range(0, len(params_buff), 4):
-            params.append(unpack('<I', params_buff[i:i + 4])[0])
-        return MtpRequest(tid, opcode, params)
-
-
-class MtpResponse(object):
-
-    def __init__(self, request):
-        self.request = request
-        self.status = ResponseCodes.OK
-        self.data = None
 
 
 class MtpDevice(MtpObjectContainer):
@@ -99,34 +65,34 @@ class MtpDevice(MtpObjectContainer):
         storage.set_device(self)
 
     @operation(OperationDataCodes.GetDeviceInfo, num_params=0, session_required=False)
-    def GetDeviceInfo(self, request):
+    def GetDeviceInfo(self, request, ir_data):
         return mtp_data(request, self.get_info())
 
     # @operation(OperationDataCodes., num_params=None, session_required=True)
     @operation(OperationDataCodes.OpenSession, num_params=1, session_required=False)
-    def OpenSession(self, request):
+    def OpenSession(self, request, ir_data):
         if self.session_id:
             raise MtpProtocolException(ResponseCodes.SESSION_ALREADY_OPEN)
         self.session_id = request.params[0]
 
     @operation(OperationDataCodes.CloseSession, num_params=0)
-    def CloseSession(self, request):
+    def CloseSession(self, request, ir_data):
         self.session_id = None
 
     @operation(OperationDataCodes.GetStorageIDs, num_params=0)
-    def GetStorageIDs(self, request):
+    def GetStorageIDs(self, request, ir_data):
         ids = list(self.stores.keys())
         data = MArray(MU32, ids)
         return mtp_data(request, data)
 
     @operation(OperationDataCodes.GetStorageInfo, num_params=1)
-    def GetStorageInfo(self, request):
+    def GetStorageInfo(self, request, ir_data):
         storage_id = request.get_param(0)
         storage = self.get_storage(storage_id)
         return mtp_data(request, storage.get_info())
 
     @operation(OperationDataCodes.GetNumObjects, num_params=1)
-    def GetNumObjects(self, request):
+    def GetNumObjects(self, request, ir_data):
         storage_id = request.get_param(0)
         obj_fmt_code = request.get_param(1)
         handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
@@ -135,7 +101,7 @@ class MtpDevice(MtpObjectContainer):
         return mtp_data(request, MU32(len(handles)))
 
     @operation(OperationDataCodes.GetObjectHandles, num_params=1)
-    def GetObjectHandles(self, request):
+    def GetObjectHandles(self, request, ir_data):
         storage_id = request.get_param(0)
         obj_fmt_code = request.get_param(1)
         handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
@@ -144,25 +110,25 @@ class MtpDevice(MtpObjectContainer):
         return mtp_data(request, MArray(MU32, handles))
 
     @operation(OperationDataCodes.GetObjectInfo, num_params=1)
-    def GetObjectInfo(self, request):
+    def GetObjectInfo(self, request, ir_data):
         handle = request.get_param(0)
         obj = self.get_object(handle)
         return mtp_data(request, obj.get_info())
 
     @operation(OperationDataCodes.GetObject, num_params=1)
-    def GetObject(self, request):
+    def GetObject(self, request, ir_data):
         handle = request.get_param(0)
         obj = self.get_object(handle)
         return mtp_data(request, obj.data)
 
     @operation(OperationDataCodes.GetThumb, num_params=1)
-    def GetThumb(self, request):
+    def GetThumb(self, request, ir_data):
         handle = request.get_param(0)
         obj = self.get_object(handle)
         return mtp_data(request, obj.get_thumb())
 
     @operation(OperationDataCodes.DeleteObject, num_params=1)
-    def DeleteObject(self, request):
+    def DeleteObject(self, request, ir_data):
         handle = request.get_param(0)
         obj_fmt_code = request.get_param(1)
         if handle == 0xffffffff:
@@ -170,6 +136,8 @@ class MtpDevice(MtpObjectContainer):
         else:
             obj = self.get_object(handle)
             obj.delete(0xffffffff)
+
+    # @operation(OperationDataCodes.SendObjectInfo, num_params=2)
 
     def delete_all_objects(self, obj_fmt_code):
         deleted = False
@@ -202,9 +170,7 @@ class MtpDevice(MtpObjectContainer):
         else:
             relevant_store = [self.get_storage(storage_id)]
         for store in relevant_store:
-            handles = store.get_handles()
-            if obj_fmt_code:
-                handles = [h for h in handles if store.get_object(h).get_fmt() == obj_fmt_code]
+            handles = [h for h in store.get_handles() if store.get_object(h).format_matches(obj_fmt_code)]
             res.extend(handles)
         return res
 
