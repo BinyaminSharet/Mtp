@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data
+from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
 from .mtp_exception import MtpProtocolException
 from struct import unpack
 
@@ -58,12 +58,14 @@ class MtpRequest(object):
     @classmethod
     def from_buff(cls, data):
         if len(data) % 4 != 0:
-            raise Exception('request length (%#x) is not a multiple of four' % (len(data)))
+            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'request length (%#x) is not a multiple of four' % (len(data)))
         if len(data) < 0xc:
-            raise Exception('request too short')
-        length, ctype, opcode, tid = unpack('<IBBI', data[:0xc])
+            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'request too short')
+        length, ctype, opcode, tid = unpack('<IHHI', data[:0xc])
+        if ctype != ContainerTypes.Command:
+            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'message is not a command (container type: %#x)' % (ctype))
         if len(data) != length:
-            raise Exception('request length (%#x) != actual length (%#x)' % (length, len(data)))
+            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT, 'request length (%#x) != actual length (%#x)' % (length, len(data)))
         params_buff = data[0xc:]
         params = []
         for i in range(0, len(params_buff), 4):

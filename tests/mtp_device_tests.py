@@ -2,7 +2,10 @@ import unittest
 from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo, MtpRequest, MtpResponse
 from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
-from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps
+from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps, ContainerTypes
+from mtpdevice.mtp_exception import MtpProtocolException
+from binascii import unhexlify
+from struct import pack
 
 
 class MtpDeviceApiTests(unittest.TestCase):
@@ -447,3 +450,61 @@ class MtpDeviceApiTests(unittest.TestCase):
         self.assertEqual(response.status, ResponseCodes.OK)
 
         self.assertNotEqual(data1, data2)
+
+
+class MtpRequestTest(unittest.TestCase):
+
+    def buildVanillabuffer(self, code, tid, params):
+        length = len(params) * 4 + 0xc
+        ctype = ContainerTypes.Command
+        buff = pack('<IHHI', length, ctype, code, tid)
+        for param in params:
+            buff += pack('<I', param)
+        return buff
+
+    def vanillaTest(self, code, tid, params):
+        buff = self.buildVanillabuffer(code, tid, params)
+        request = MtpRequest.from_buff(buff)
+        self.assertEqual(request.code, code)
+        self.assertEqual(request.tid, tid)
+        self.assertEqual(request.params, params)
+        self.assertEqual(request.num_params(), len(params))
+        for i in range(len(params)):
+            self.assertEqual(request.get_param(i), params[i])
+        for i in range(len(params), len(params) + 5):
+            self.assertIsNone(request.get_param(i))
+
+    def testCorrectValuesFromBufferNoParams(self):
+        self.vanillaTest(1, 2, [])
+
+    def testCorrectValuesFromBufferSingleParam(self):
+        self.vanillaTest(1, 2, [0x12345678])
+
+    def testCorrectValuesFromBufferMultipleParams(self):
+        self.vanillaTest(1, 2, [0x01020304, 0x11121314, 0x21222324, 0x31323334, 0x41424344])
+
+    def invalidBufferTest(self, buff, expected_response=ResponseCodes.INVALID_CODE_FORMAT):
+        with self.assertRaises(MtpProtocolException) as cm:
+            MtpRequest.from_buff(buff)
+        if expected_response is not None:
+            self.assertEqual(cm.exception.response, expected_response)
+
+    def testInvalidLengthTooLongNoParams(self):
+        buff = unhexlify('100000000100010002000000')
+        self.invalidBufferTest(buff)
+
+    def testInvalidLengthTooShortNoParams(self):
+        buff = unhexlify('080000000100010002000000')
+        self.invalidBufferTest(buff)
+
+    def testInvalidLengthTooLongWithParams(self):
+        buff = unhexlify('14000000010001000200000011111111')
+        self.invalidBufferTest(buff)
+
+    def testInvalidLengthTooShortWithParams(self):
+        buff = unhexlify('0c000000010001000200000011111111')
+        self.invalidBufferTest(buff)
+
+    def testInvalidLengthNotMultipleOfFour(self):
+        buff = unhexlify('0d0000000100010002000000ff')
+        self.invalidBufferTest(buff)
