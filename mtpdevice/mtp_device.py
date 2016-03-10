@@ -161,7 +161,7 @@ class MtpDevice(MtpObjectContainer):
                 raise MtpProtocolException(ResponseCodes.STORE_READ_ONLY)
         else:
             if parent:
-                raise MtpProtocolException(ResponseCodes.)
+                raise MtpProtocolException(ResponseCodes.INVALID_STORAGE_ID)
 
 
 
