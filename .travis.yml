@@ -8,8 +8,9 @@ install:
     - pip install coveralls
     - pip install -e .
 before_script:
+    - cd tests
     - mkdir logs
 script:
-    - coverage run --source=mtpdevice tests/runner.py
+    - coverage run --source=../mtpdevice runner.py
 after_success:
     - coveralls
