@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
 from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
+from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
 
 
@@ -24,16 +25,18 @@ def operation(opcode, num_params=None, session_required=True, ir_data_required=F
     '''
 
     def decorator(func):
-        def wrapper(self, request, response, ir_data):
+        def wrapper(self, command, response, ir_data):
             try:
                 if num_params is not None:
-                    if request.ctype != ContainerTypes.Command:
+                    if command.ctype != ContainerTypes.Command:
                         raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT)
-                    if request.num_params() < num_params:
+                    if command.num_params() < num_params:
                         raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
                 if session_required and (self.session_id is None):
                     raise MtpProtocolException(ResponseCodes.SESSION_NOT_OPEN)
-                res = func(self, request, ir_data)
+                if ir_data_required and (ir_data is None):
+                    raise MtpProtocolException(ResponseCodes.INVALID_DATASET)
+                res = func(self, command, response, ir_data)
             except MtpProtocolException as ex:
                 response.code = ex.response
                 res = None
@@ -65,79 +68,102 @@ class MtpDevice(MtpObjectContainer):
         storage.set_device(self)
 
     @operation(OperationDataCodes.GetDeviceInfo, num_params=0, session_required=False)
-    def GetDeviceInfo(self, request, ir_data):
-        return mtp_data(request, self.get_info())
+    def GetDeviceInfo(self, command, response, ir_data):
+        return mtp_data(command, self.get_info())
 
     # @operation(OperationDataCodes., num_params=None, session_required=True)
     @operation(OperationDataCodes.OpenSession, num_params=1, session_required=False)
-    def OpenSession(self, request, ir_data):
+    def OpenSession(self, command, response, ir_data):
         if self.session_id:
             raise MtpProtocolException(ResponseCodes.SESSION_ALREADY_OPEN)
-        self.session_id = request.params[0]
+        self.session_id = command.params[0]
 
     @operation(OperationDataCodes.CloseSession, num_params=0)
-    def CloseSession(self, request, ir_data):
+    def CloseSession(self, command, response, ir_data):
         self.session_id = None
 
     @operation(OperationDataCodes.GetStorageIDs, num_params=0)
-    def GetStorageIDs(self, request, ir_data):
+    def GetStorageIDs(self, command, response, ir_data):
         ids = list(self.stores.keys())
         data = MArray(MU32, ids)
-        return mtp_data(request, data)
+        return mtp_data(command, data)
 
     @operation(OperationDataCodes.GetStorageInfo, num_params=1)
-    def GetStorageInfo(self, request, ir_data):
-        storage_id = request.get_param(0)
+    def GetStorageInfo(self, command, response, ir_data):
+        storage_id = command.get_param(0)
         storage = self.get_storage(storage_id)
-        return mtp_data(request, storage.get_info())
+        return mtp_data(command, storage.get_info())
 
     @operation(OperationDataCodes.GetNumObjects, num_params=1)
-    def GetNumObjects(self, request, ir_data):
-        storage_id = request.get_param(0)
-        obj_fmt_code = request.get_param(1)
+    def GetNumObjects(self, command, response, ir_data):
+        storage_id = command.get_param(0)
+        obj_fmt_code = command.get_param(1)
         handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         # .. todo:: assoc_handle filtering
-        # assoc_handle = request.get_param(2)
-        return mtp_data(request, MU32(len(handles)))
+        # assoc_handle = command.get_param(2)
+        return mtp_data(command, MU32(len(handles)))
 
     @operation(OperationDataCodes.GetObjectHandles, num_params=1)
-    def GetObjectHandles(self, request, ir_data):
-        storage_id = request.get_param(0)
-        obj_fmt_code = request.get_param(1)
+    def GetObjectHandles(self, command, response, ir_data):
+        storage_id = command.get_param(0)
+        obj_fmt_code = command.get_param(1)
         handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         # .. todo:: assoc_handle filtering
-        # assoc_handle = request.get_param(2)
-        return mtp_data(request, MArray(MU32, handles))
+        # assoc_handle = command.get_param(2)
+        return mtp_data(command, MArray(MU32, handles))
 
     @operation(OperationDataCodes.GetObjectInfo, num_params=1)
-    def GetObjectInfo(self, request, ir_data):
-        handle = request.get_param(0)
+    def GetObjectInfo(self, command, response, ir_data):
+        handle = command.get_param(0)
         obj = self.get_object(handle)
-        return mtp_data(request, obj.get_info())
+        return mtp_data(command, obj.get_info())
 
     @operation(OperationDataCodes.GetObject, num_params=1)
-    def GetObject(self, request, ir_data):
-        handle = request.get_param(0)
+    def GetObject(self, command, response, ir_data):
+        handle = command.get_param(0)
         obj = self.get_object(handle)
-        return mtp_data(request, obj.data)
+        return mtp_data(command, obj.data)
 
     @operation(OperationDataCodes.GetThumb, num_params=1)
-    def GetThumb(self, request, ir_data):
-        handle = request.get_param(0)
+    def GetThumb(self, command, response, ir_data):
+        handle = command.get_param(0)
         obj = self.get_object(handle)
-        return mtp_data(request, obj.get_thumb())
+        return mtp_data(command, obj.get_thumb())
 
     @operation(OperationDataCodes.DeleteObject, num_params=1)
-    def DeleteObject(self, request, ir_data):
-        handle = request.get_param(0)
-        obj_fmt_code = request.get_param(1)
+    def DeleteObject(self, command, response, ir_data):
+        handle = command.get_param(0)
+        obj_fmt_code = command.get_param(1)
         if handle == 0xffffffff:
             self.delete_all_objects(obj_fmt_code)
         else:
             obj = self.get_object(handle)
             obj.delete(0xffffffff)
 
-    # @operation(OperationDataCodes.SendObjectInfo, num_params=2)
+    @operation(OperationDataCodes.SendObjectInfo, num_params=2, ir_data_required=True)
+    def SendObjectInfo(self, command, response, ir_data):
+        '''
+        .. todo:: complete !!
+        '''
+        storage_id = command.get_param(0)
+        parent_handle = command.get_param(1)
+        if storage_id:
+            store = self.get_storage(storage_id)
+            if parent_handle:
+                parent = store.get_object(parent_handle)
+            else:
+                parent = store
+            if store.can_write():
+                obj_info = MtpObjectInfo.from_buff(ir_data)
+                obj = MtpObject(None, obj_info, [])
+                parent.add_object(obj)
+            else:
+                raise MtpProtocolException(ResponseCodes.STORE_READ_ONLY)
+        else:
+            if parent:
+                raise MtpProtocolException(ResponseCodes.)
+
+
 
     def delete_all_objects(self, obj_fmt_code):
         deleted = False

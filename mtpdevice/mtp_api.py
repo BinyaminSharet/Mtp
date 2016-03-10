@@ -97,4 +97,3 @@ class MtpApi(object):
                     self.state = MtpApi.STATE_HANDLE
         else:
             raise MtpProtocolException('only expecting Command at this stage')
-

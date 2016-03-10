@@ -3,10 +3,11 @@ The object's binary data, the ObjectInfo dataset,
 Object Properties and Object References
 '''
 from __future__ import absolute_import
-from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from .mtp_proto import MU32, MU16, MStr, MDateTime, ResponseCodes
-from .mtp_exception import MtpProtocolException
 import os
+from struct import unpack
+from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
+from .mtp_proto import MU32, MU16, MStr, MStr_unpack, MDateTime, MDateTime_unpack, ResponseCodes
+from .mtp_exception import MtpProtocolException
 
 
 class MtpObject(MtpObjectContainer):
@@ -171,3 +172,31 @@ class MtpObjectInfo(MtpEntityInfoInterface):
             MDateTime(self.mtime) +
             MStr(self.keywords)
         )
+
+    @classmethod
+    def from_buff(cls, buff):
+        try:
+            (
+                storage,
+                object_format,
+                protection,
+                compressed_size,
+                thumb_format,
+                thumb_compressed_size,
+                thumb_pix_width,
+                thumb_pix_height,
+                image_pix_width,
+                image_pix_height,
+                image_bit_depth,
+                parent_object,
+                assoc_type,
+                assoc_desc,
+                seq_num,
+            ) = unpack('<IHHIHIIIIIIIHII', buff[:52])
+            rest = buff[52:]
+            (filename, rest) = MStr_unpack(rest)
+            (ctime, rest) = MDateTime_unpack(rest)
+            (mtime, rest) = MDateTime_unpack(rest)
+            (keywords, rest) = MStr_unpack(rest)
+        except:
+            raise MtpProtocolException(ResponseCodes.INVALID_DATASET)

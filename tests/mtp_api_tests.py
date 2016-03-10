@@ -60,3 +60,10 @@ class MtpApiTest(unittest.TestCase):
         resps = self.api.handle_payload(command)
         self.assertEqual(len(resps), 2)
         self.assertEqual(resps[1], excepted_response)
+
+    def testApiUnsupportedOperation(self):
+        command = pack('<IHHI', 0xc, ContainerTypes.Command, 0, 1)
+        excepted_response = pack('<IHHI', 0xc, ContainerTypes.Response, ResponseCodes.OPERATION_NOT_SUPPORTED, 1)
+        resps = self.api.handle_payload(command)
+        self.assertEqual(len(resps), 1)
+        self.assertEqual(resps[0], excepted_response)

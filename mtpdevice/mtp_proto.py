@@ -146,9 +146,6 @@ class Container(object):
 
 
 def MStr(s):
-    '''
-    .. todo:: 1 byte length, then unicode null-terminated string
-    '''
     if len(s):
         s += '\x00'
         encoded = s.encode('utf-16le')  # should probably be some encoding...
@@ -157,10 +154,32 @@ def MStr(s):
     return pack('B', len(s)) + encoded
 
 
+def MStr_unpack(buff):
+    '''
+    :return: tuple (unpacked string, rest of buffer)
+    '''
+    strlen = unpack('B', buff[0])
+    encodedlen = (strlen * 2)
+    encoded = buff[1:encodedlen + 1]
+    decoded = encoded.decode('utf-16le')
+    resstr = decoded[:-1]
+    rest = buff[encodedlen + 1:]
+    return (resstr, rest)
+
+
 def MDateTime(secs):
     dt = datetime.datetime.fromtimestamp(secs)
-    date_str = dt.strftime('%4Y%2m%dT%2H%2M%2S')
+    date_str = dt.strftime('%Y%m%dT%H%M%S')
     return MStr(date_str)
+
+
+def MDateTime_unpack(buff):
+    '''
+    :return: tuple (unpacked time in seconds, rest of buffer)
+    '''
+    (date_str, rest) = MStr_unpack(buff)
+    dt = datetime.datetime.strptime(date_str, '%Y%m%dT%H%M%S')
+    return (int(dt.timestamp), rest)
 
 
 def MArray(elem_type, elems):
