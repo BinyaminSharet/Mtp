@@ -2,9 +2,10 @@
 The object's binary data, the ObjectInfo dataset,
 Object Properties and Object References
 '''
-from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from mtp_proto import MU32, MU16, MStr, MDateTime, ResponseCodes
-from mtp_exception import MtpProtocolException
+from __future__ import absolute_import
+from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
+from .mtp_proto import MU32, MU16, MStr, MDateTime, ResponseCodes
+from .mtp_exception import MtpProtocolException
 import os
 
 

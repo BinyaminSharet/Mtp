@@ -1,6 +1,7 @@
-from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data
-from mtp_exception import MtpProtocolException
+from __future__ import absolute_import
+from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
+from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data
+from .mtp_exception import MtpProtocolException
 from struct import unpack
 
 

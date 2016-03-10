@@ -1,9 +1,8 @@
-#!/usr/bin/env python
 import unittest
-from mtp_device import MtpDevice, MtpDeviceInfo, MtpRequest, MtpResponse
-from mtp_storage import MtpStorage, MtpStorageInfo
-from mtp_object import MtpObject
-from mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps
+from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo, MtpRequest, MtpResponse
+from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
+from mtpdevice.mtp_object import MtpObject
+from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps
 
 
 class MtpDeviceApiTests(unittest.TestCase):
@@ -426,7 +425,3 @@ class MtpDeviceApiTests(unittest.TestCase):
         self.assertEqual(response.status, ResponseCodes.OK)
 
         self.assertNotEqual(data1, data2)
-
-
-if __name__ == '__main__':
-    unittest.main()

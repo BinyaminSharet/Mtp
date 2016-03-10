@@ -1,5 +1,6 @@
-from mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from mtp_proto import MU16, MU32, MU64, MStr, AccessCaps
+from __future__ import absolute_import
+from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
+from .mtp_proto import MU16, MU32, MU64, MStr, AccessCaps
 
 
 class MtpStorage(MtpObjectContainer):
