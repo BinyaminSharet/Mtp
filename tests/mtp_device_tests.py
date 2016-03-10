@@ -252,6 +252,17 @@ class MtpDeviceApiTests(unittest.TestCase):
         self.dev.GetObjectHandles(request, response)
         self.assertEqual(response.status, ResponseCodes.OK)
 
+    def test_GetObjectHandlesWildcardStorageIdAfterOpenSession(self):
+        session_id = 1
+        request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
+        response = MtpResponse(request)
+        self.dev.OpenSession(request, response)
+
+        request = MtpRequest(2, OperationDataCodes.GetObjectHandles, [0xffffffff])
+        response = MtpResponse(request)
+        self.dev.GetObjectHandles(request, response)
+        self.assertEqual(response.status, ResponseCodes.OK)
+
     def test_GetObjectHandlesWithoutStorageId(self):
         session_id = 1
         request = MtpRequest(1, OperationDataCodes.OpenSession, [session_id])
