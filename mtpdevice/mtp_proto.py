@@ -146,7 +146,7 @@ def MStr_unpack(buff):
     '''
     :return: tuple (unpacked string, rest of buffer)
     '''
-    strlen = unpack('B', buff[0])[0]
+    strlen = unpack('B', buff[0:1])[0]
     encodedlen = (strlen * 2)
     encoded = buff[1:encodedlen + 1]
     decoded = encoded.decode('utf-16le')
