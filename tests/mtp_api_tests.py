@@ -1,13 +1,14 @@
-import unittest
+from common import BaseTestCase
 from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo
 from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import ContainerTypes, OperationDataCodes, ResponseCodes
 from mtpdevice.mtp_api import MtpApi
-from struct import pack
+from struct import pack, unpack
+from binascii import unhexlify
 
 
-class MtpApiTest(unittest.TestCase):
+class MtpApiTest(BaseTestCase):
     '''
     Currently, all tests here are with buffers, as the API of MtpApi
     '''
@@ -67,3 +68,69 @@ class MtpApiTest(unittest.TestCase):
         resps = self.api.handle_payload(command)
         self.assertEqual(len(resps), 1)
         self.assertEqual(resps[0], excepted_response)
+
+    def testApiSendObjectOperation(self):
+        obj_data = b'1234'
+        # open session
+        self.testApiOpenSession()
+
+        # send object info
+        send_obj_info_cmd = pack('<IHHII', 0x10, ContainerTypes.Command, OperationDataCodes.SendObjectInfo, 1, self.storage.get_uid())
+        send_obj_info_cmd_resp = self.api.handle_payload(send_obj_info_cmd)
+        self.assertEqual(send_obj_info_cmd_resp, [])
+        obj_info_dataset = unhexlify('0100010001380000040000000000000000000000000000000000000000000000000000000000060000000000000000000000000011770061006c006c00700061007000650072005f0031002e006a007000650067000000000000')
+        send_obj_info_data = pack('<IHHI', len(obj_info_dataset) + 0xc, ContainerTypes.Data, OperationDataCodes.SendObjectInfo, 1) + obj_info_dataset
+        send_obj_info_data_resp = self.api.handle_payload(send_obj_info_data)
+        self.assertEqual(len(send_obj_info_data_resp), 1)
+        response_status = unpack('<H', send_obj_info_data_resp[0][6:8])[0]
+        self.assertEqual(response_status, ResponseCodes.OK)
+
+        # send object
+        send_obj_cmd = pack('<IHHI', 0xc, ContainerTypes.Command, OperationDataCodes.SendObject, 2)
+        send_obj_cmd_resp = self.api.handle_payload(send_obj_cmd)
+        self.assertEqual(send_obj_cmd_resp, [])
+        send_obj_data = pack('<IHHI', len(obj_data) + 0xc, ContainerTypes.Data, OperationDataCodes.SendObject, 2) + obj_data
+        send_obj_data_resp = self.api.handle_payload(send_obj_data)
+        self.assertEqual(len(send_obj_data_resp), 1)
+        response_status = unpack('<H', send_obj_info_data_resp[0][6:8])[0]
+        self.assertEqual(response_status, ResponseCodes.OK)
+        # read object info
+        # read object ?
+
+    def testApiLongSendObjectOperation(self):
+        obj_data = b'1234'
+        # open session
+        self.testApiOpenSession()
+
+        # send object info
+        send_obj_info_cmd = pack('<IHHII', 0x10, ContainerTypes.Command, OperationDataCodes.SendObjectInfo, 1, self.storage.get_uid())
+        send_obj_info_cmd_resp = self.api.handle_payload(send_obj_info_cmd)
+        self.assertEqual(send_obj_info_cmd_resp, [])
+        obj_info_dataset = unhexlify('0100010001380000040000000000000000000000000000000000000000000000000000000000060000000000000000000000000011770061006c006c00700061007000650072005f0031002e006a007000650067000000000000')
+        send_obj_info_data = pack('<IHHI', len(obj_info_dataset) + 0xc, ContainerTypes.Data, OperationDataCodes.SendObjectInfo, 1) + obj_info_dataset
+        send_obj_info_data_resp = self.api.handle_payload(send_obj_info_data)
+        self.assertEqual(len(send_obj_info_data_resp), 1)
+        response_status = unpack('<H', send_obj_info_data_resp[0][6:8])[0]
+        self.assertEqual(response_status, ResponseCodes.OK)
+
+        # send object
+        send_obj_cmd = pack('<IHHI', 0xc, ContainerTypes.Command, OperationDataCodes.SendObject, 2)
+        send_obj_cmd_resp = self.api.handle_payload(send_obj_cmd)
+        self.assertEqual(send_obj_cmd_resp, [])
+
+        send_obj_data = pack('<IHHI', len(obj_data) + 0xc, ContainerTypes.Data, OperationDataCodes.SendObject, 2) + obj_data[:2]
+        send_obj_data_resp = self.api.handle_payload(send_obj_data)
+        self.assertEqual(send_obj_data_resp, [])
+
+        send_obj_data = obj_data[2:3]
+        send_obj_data_resp = self.api.handle_payload(send_obj_data)
+        self.assertEqual(send_obj_data_resp, [])
+
+        send_obj_data = obj_data[3:4]
+        send_obj_data_resp = self.api.handle_payload(send_obj_data)
+        self.assertEqual(len(send_obj_data_resp), 1)
+
+        response_status = unpack('<H', send_obj_info_data_resp[0][6:8])[0]
+        self.assertEqual(response_status, ResponseCodes.OK)
+        # read object info
+        # read object ?

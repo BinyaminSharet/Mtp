@@ -35,7 +35,7 @@ class ResponseCodes(object):
     INVALID_OBJECT_HANDLE = 0x2009
     DEVICE_PROP_NOT_SUPPORTED = 0x200A
     INVALID_OBJECT_FORMAT_CODE = 0x200B
-    STORAGE_FULL = 0x200C
+    STORE_FULL = 0x200C
     OBJECT_WRITE_PROTECTED = 0x200D
     STORE_READ_ONLY = 0x200E
     ACCESS_DENIED = 0x200F
@@ -133,18 +133,6 @@ class AccessCaps(object):
     READ_ONLY_WITH_DELETE = 0x0002
 
 
-class Container(object):
-
-    def __init__(self, data):
-        (
-            self.length,
-            self.type,
-            self.code,
-            self.tid,
-        ) = unpack('<IHHI', data[:12])
-        self.data = data[12:]
-
-
 def MStr(s):
     if len(s):
         s += '\x00'
@@ -158,7 +146,7 @@ def MStr_unpack(buff):
     '''
     :return: tuple (unpacked string, rest of buffer)
     '''
-    strlen = unpack('B', buff[0])
+    strlen = unpack('B', buff[0])[0]
     encodedlen = (strlen * 2)
     encoded = buff[1:encodedlen + 1]
     decoded = encoded.decode('utf-16le')
@@ -178,8 +166,11 @@ def MDateTime_unpack(buff):
     :return: tuple (unpacked time in seconds, rest of buffer)
     '''
     (date_str, rest) = MStr_unpack(buff)
-    dt = datetime.datetime.strptime(date_str, '%Y%m%dT%H%M%S')
-    return (int(dt.timestamp), rest)
+    if len(date_str):
+        dt = datetime.datetime.strptime(date_str, '%Y%m%dT%H%M%S')
+        return (int(dt.timestamp), rest)
+    else:
+        return (0, rest)
 
 
 def MArray(elem_type, elems):
@@ -190,45 +181,36 @@ def MArray(elem_type, elems):
     return res
 
 
-def MS8(i):
-    return pack('<B', i)
-
-
 def MU8(i):
     return pack('<B', i)
 
 
-def MS16(i):
-    return pack('<H', i)
+def MU8_unpack(buff):
+    return (unpack('<B', buff[:1])[0], buff[1:])
 
 
 def MU16(i):
     return pack('<H', i)
 
 
-def MS32(i):
-    return pack('<I', i)
+def MU16_unpack(buff):
+    return (unpack('<H', buff[:2])[0], buff[2:])
 
 
 def MU32(i):
     return pack('<I', i)
 
 
-def MS64(i):
-    return pack('<Q', i)
+def MU32_unpack(buff):
+    return (unpack('<I', buff[:4])[0], buff[4:])
 
 
 def MU64(i):
     return pack('<Q', i)
 
 
-def mtp_response(container, status):
-    tid = 0 if not container else container.tid
-    return MU32(0xC) + MU16(ContainerTypes.Response) + MU16(status) + MU32(tid)
-
-
-def mtp_error(container, status):
-    return (None, mtp_response(container, status))
+def MU64_unpack(buff):
+    return (unpack('<Q', buff[:8])[0], buff[8:])
 
 
 def mtp_data(container, data):

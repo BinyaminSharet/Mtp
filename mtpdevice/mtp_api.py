@@ -59,12 +59,12 @@ class MtpApi(object):
         command = self.transaction.command
         response = self.transaction.response
         ir_data = self.transaction.ir_data
-        self.transaction.ri_data = self.transaction.operation.handler(self.device, command, response, ir_data)
+        self.transaction.ri_data = self.device.handle_transaction(command, response, ir_data)
         self.state = MtpApi.STATE_RESPOND
 
     def state_wait_more_data(self, payload):
         self.transaction.ir_data.data += payload
-        if self.has_got_all_data():
+        if self.transaction.ir_data.has_got_all_data():
             self.state = MtpApi.STATE_HANDLE
         else:
             self.state = MtpApi.STATE_WAIT_MORE_DATA
@@ -74,7 +74,7 @@ class MtpApi(object):
         if msg.ctype == ContainerTypes.Data:
             self.transaction.ir_data = msg
             if msg.has_got_all_data():
-                self.state = MtpApi.STATE_RESPOND
+                self.state = MtpApi.STATE_HANDLE
             else:
                 self.state = MtpApi.STATE_WAIT_MORE_DATA
         else:

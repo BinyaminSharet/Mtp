@@ -1,5 +1,4 @@
 from __future__ import absolute_import
-from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
 from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
 from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
@@ -50,14 +49,19 @@ def operation(opcode, num_params=None, session_required=True, ir_data_required=F
     return decorator
 
 
-class MtpDevice(MtpObjectContainer):
+class MtpDevice(object):
 
     def __init__(self, info):
-        super(MtpDevice, self).__init__(info)
+        super(MtpDevice, self).__init__()
+        self.info = info
         self.stores = {}
         self.operations = operations
-        self.info.operations_supported = operations.keys()
+        self.info.operations_supported = list(operations.keys())
         self.session_id = None
+        self.last_obj = None
+
+    def get_info(self):
+        return self.info.pack()
 
     def add_storage(self, storage):
         '''
@@ -66,6 +70,15 @@ class MtpDevice(MtpObjectContainer):
         '''
         self.stores[storage.get_uid()] = storage
         storage.set_device(self)
+
+    def handle_transaction(self, command, response, ir_data):
+        ccode = command.code
+        if ccode in operations:
+            if self.last_obj and (ccode != OperationDataCodes.SendObject):
+                self.last_obj.delete(0xffffffff)
+                self.last_obj = None
+            return self.operations[ccode].handler(self, command, response, ir_data)
+        return None
 
     @operation(OperationDataCodes.GetDeviceInfo, num_params=0, session_required=False)
     def GetDeviceInfo(self, command, response, ir_data):
@@ -140,7 +153,7 @@ class MtpDevice(MtpObjectContainer):
             obj = self.get_object(handle)
             obj.delete(0xffffffff)
 
-    @operation(OperationDataCodes.SendObjectInfo, num_params=2, ir_data_required=True)
+    @operation(OperationDataCodes.SendObjectInfo, num_params=1, ir_data_required=True)
     def SendObjectInfo(self, command, response, ir_data):
         '''
         .. todo:: complete !!
@@ -151,25 +164,65 @@ class MtpDevice(MtpObjectContainer):
             store = self.get_storage(storage_id)
             if parent_handle:
                 parent = store.get_object(parent_handle)
+                parent_uid = parent.get_uid()
             else:
                 parent = store
+                parent_uid = 0xffffffff
             if store.can_write():
-                obj_info = MtpObjectInfo.from_buff(ir_data)
+                obj_info = MtpObjectInfo.from_buff(ir_data.data)
                 obj = MtpObject(None, obj_info, [])
                 parent.add_object(obj)
+                response.add_param(store.get_uid())
+                response.add_param(parent_uid)
+                response.add_param(obj.get_uid())
+                # next operation MUST be SendObject, otherwise we do NOT keep the object
+                # so we need a refrence to it.
+                self.last_obj = obj
             else:
                 raise MtpProtocolException(ResponseCodes.STORE_READ_ONLY)
         else:
-            if parent:
-                raise MtpProtocolException(ResponseCodes.INVALID_STORAGE_ID)
+            #
+            # This might not be accurate, but I'm willing to play with that for now
+            raise MtpProtocolException(ResponseCodes.INVALID_STORAGE_ID)
 
+    @operation(OperationDataCodes.SendObject, num_params=0, ir_data_required=True)
+    def SendObject(self, command, response, ir_data):
+        if not self.last_obj:
+            raise MtpProtocolException(ResponseCodes.NO_VALID_OBJECT_INFO)
+        self.last_obj.set_data(ir_data.data, adhere_size=True)
+        self.last_obj = None
 
+    # @operation(OperationDataCodes.InitiateCapture, num_params=0):
+    def InitiateCapture(self, command, response, ir_data):
+        '''
+        .. todo::
+
+            This is part of a complex operation (first time to have events)
+            so it is not implemented for now ...
+            See appendix D.2.14
+        '''
+        raise MtpProtocolException(ResponseCodes.OPERATION_NOT_SUPPORTED)
+
+    @operation(OperationDataCodes.FormatStore, num_params=1)
+    def FormatStore(self, command, response, ir_data):
+        '''
+        Current implementation will NOT perform a format
+        '''
+        storage_id = command.get_param(0)
+        self.get_storage(storage_id)
+        raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    @operation(OperationDataCodes.ResetDevice, num_params=0)
+    def ResetDevice(self, command, response, ir_data):
+        if not self.session_id:
+            raise MtpProtocolException(ResponseCodes.SESSION_NOT_OPEN)
+        self.session_id = None
 
     def delete_all_objects(self, obj_fmt_code):
         deleted = False
         undeleted = False
         for store in self.stores.values():
-            objects = store.objects[:]
+            objects = store.get_objects()
             for obj in objects:
                 try:
                     obj.delete(obj_fmt_code)
@@ -226,7 +279,7 @@ class MtpDevice(MtpObjectContainer):
         return self.stores[storage_id]
 
 
-class MtpDeviceInfo(MtpEntityInfoInterface):
+class MtpDeviceInfo(object):
 
     def __init__(
         self,

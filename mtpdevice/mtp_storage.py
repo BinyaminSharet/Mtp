@@ -1,17 +1,32 @@
 from __future__ import absolute_import
-from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
+from .mtp_base import MtpBaseObject
 from .mtp_proto import MU16, MU32, MU64, MStr, AccessCaps
 
 
-class MtpStorage(MtpObjectContainer):
+class MtpStorage(MtpBaseObject):
 
     def __init__(self, info):
-        super(MtpStorage, self).__init__(info)
+        super(MtpStorage, self).__init__()
+        self.info = info
         self.dev = None
+        self.objects = []
+
+    def get_info(self):
+        return self.info.pack()
+
+    def get_object(self, handle):
+        for obj in self.objects:
+            res = obj.get_object(handle)
+            if res:
+                return res
+        return None
 
     def add_object(self, obj):
-        super(MtpStorage, self).add_object(obj)
+        self.objects.append(obj)
         obj.set_storage(self)
+
+    def get_objects(self):
+        return self.objects[:]
 
     def set_device(self, dev):
         self.dev = dev
@@ -29,7 +44,7 @@ class MtpStorage(MtpObjectContainer):
         return self.info.access == AccessCaps.READ_WRITE
 
 
-class MtpStorageInfo(MtpEntityInfoInterface):
+class MtpStorageInfo(object):
 
     def __init__(
         self,

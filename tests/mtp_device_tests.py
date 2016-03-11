@@ -1,11 +1,9 @@
-import unittest
+from common import BaseTestCase
 from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo
 from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps, ContainerTypes
-from mtpdevice.mtp_exception import MtpProtocolException
-from mtpdevice.mtp_msg import MtpParametersMessage, msg_from_buff, response_from_command
-from binascii import unhexlify
+from mtpdevice.mtp_msg import MtpParametersMessage, response_from_command
 from struct import pack
 
 
@@ -22,7 +20,7 @@ def response_message(cmd):
     return response_from_command(cmd, ResponseCodes.OK)
 
 
-class MtpDeviceTests(unittest.TestCase):
+class MtpDeviceTests(BaseTestCase):
 
     def setUp(self):
         super(MtpDeviceTests, self).setUp()

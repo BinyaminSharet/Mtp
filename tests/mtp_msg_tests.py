@@ -1,4 +1,4 @@
-import unittest
+from common import BaseTestCase
 from struct import pack
 from binascii import unhexlify
 from mtpdevice.mtp_proto import ContainerTypes, ResponseCodes
@@ -6,7 +6,7 @@ from mtpdevice.mtp_exception import MtpProtocolException
 from mtpdevice.mtp_msg import msg_from_buff
 
 
-class CommandMessageTest(unittest.TestCase):
+class CommandMessageTest(BaseTestCase):
 
     def buildVanillabuffer(self, code, tid, params):
         length = len(params) * 4 + 0xc

@@ -4,25 +4,64 @@ Object Properties and Object References
 '''
 from __future__ import absolute_import
 import os
-from struct import unpack
-from .mtp_base import MtpObjectContainer, MtpEntityInfoInterface
-from .mtp_proto import MU32, MU16, MStr, MStr_unpack, MDateTime, MDateTime_unpack, ResponseCodes
+from .mtp_base import MtpBaseObject
+from .mtp_proto import MU32, MU32_unpack, MU16, MU16_unpack, MStr, MStr_unpack, MDateTime, MDateTime_unpack, ResponseCodes
 from .mtp_exception import MtpProtocolException
 
 
-class MtpObject(MtpObjectContainer):
+class MtpObject(MtpBaseObject):
 
     def __init__(self, data, info, properties):
-        super(MtpObject, self).__init__(info)
-        self.data = data
+        super(MtpObject, self).__init__()
+        self.info = info
+        self.set_data(data)
         self.properties = properties
         self.real_path = None
+        self.objects = []
+        self.storage = None
+
+    def get_info(self):
+        return self.info.pack()
+
+    def get_objects(self):
+        return self.objects[:]
+
+    def add_object(self, obj):
+        self.objects.append(obj)
+        obj.set_parent(self)
+        obj.set_storage(self.storage)
+
+    def set_parent(self, parent):
+        self.info.parent_object = parent
 
     def set_storage(self, storage):
         self.info.storage = storage
         # TODO: recursion loop??
         for obj in self.objects:
             obj.set_storage(storage)
+
+    def get_object(self, handle):
+        if self.uid == handle:
+            return self
+        for obj in self.objects:
+            res = obj.get_object(handle)
+            if res is not None:
+                return res
+        return None
+
+    def get_handles(self):
+        handles = [self.uid]
+        for obj in self.objects:
+            handles.extend(obj.get_handles())
+        return handles
+
+    def set_data(self, data, adhere_size=False):
+        if adhere_size:
+            if len(data) > self.info.compressed_size:
+                raise MtpProtocolException(ResponseCodes.STORE_FULL)
+        if self.info and (data is not None):
+            self.info.compressed_size = len(data)
+        self.data = data
 
     def get_thumb(self, obj):
         raise MtpProtocolException(ResponseCodes.NO_THUMBNAIL_PRESENT)
@@ -40,8 +79,8 @@ class MtpObject(MtpObjectContainer):
         '''
         if not self.format_matches(fmt):
             raise MtpProtocolException(ResponseCodes.SPECIFICATION_BY_FORMAT_UNSUPPORTED)
-        if self.parent:
-            self.parent.objects.remove(self)
+        if self.info.parent_object:
+            self.info.parent_object.objects.remove(self)
         else:
             self.info.storage.objects.remove(self)
 
@@ -119,7 +158,7 @@ class MtpObject(MtpObjectContainer):
         return obj
 
 
-class MtpObjectInfo(MtpEntityInfoInterface):
+class MtpObjectInfo(object):
 
     def __init__(
         self,
@@ -162,7 +201,7 @@ class MtpObjectInfo(MtpEntityInfoInterface):
             MU32(self.image_pix_width) +
             MU32(self.image_pix_height) +
             MU32(self.image_bit_depth) +
-            MU32(0 if not self.parent_object else self.parent_object.get_uid()) +
+            MU32(0 if not self.parent_object else self.parent_object.uid) +
             MU16(self.assoc_type) +
             # TODO (AssociationDesc)
             MU32(self.assoc_desc) +
@@ -176,7 +215,27 @@ class MtpObjectInfo(MtpEntityInfoInterface):
     @classmethod
     def from_buff(cls, buff):
         try:
-            (
+            rest = buff
+            (storage, rest) = MU32_unpack(rest)
+            (object_format, rest) = MU16_unpack(rest)
+            (protection, rest) = MU16_unpack(rest)
+            (compressed_size, rest) = MU32_unpack(rest)
+            (thumb_format, rest) = MU16_unpack(rest)
+            (thumb_compressed_size, rest) = MU32_unpack(rest)
+            (thumb_pix_width, rest) = MU32_unpack(rest)
+            (thumb_pix_height, rest) = MU32_unpack(rest)
+            (image_pix_width, rest) = MU32_unpack(rest)
+            (image_pix_height, rest) = MU32_unpack(rest)
+            (image_bit_depth, rest) = MU32_unpack(rest)
+            (parent_object, rest) = MU32_unpack(rest)
+            (assoc_type, rest) = MU16_unpack(rest)
+            (assoc_desc, rest) = MU32_unpack(rest)
+            (seq_num, rest) = MU32_unpack(rest)
+            (filename, rest) = MStr_unpack(rest)
+            (ctime, rest) = MDateTime_unpack(rest)
+            (mtime, rest) = MDateTime_unpack(rest)
+            (keywords, rest) = MStr_unpack(rest)
+            return MtpObjectInfo(
                 storage,
                 object_format,
                 protection,
@@ -192,11 +251,12 @@ class MtpObjectInfo(MtpEntityInfoInterface):
                 assoc_type,
                 assoc_desc,
                 seq_num,
-            ) = unpack('<IHHIHIIIIIIIHII', buff[:52])
-            rest = buff[52:]
-            (filename, rest) = MStr_unpack(rest)
-            (ctime, rest) = MDateTime_unpack(rest)
-            (mtime, rest) = MDateTime_unpack(rest)
-            (keywords, rest) = MStr_unpack(rest)
+                filename,
+                ctime,
+                mtime,
+                keywords,
+            )
         except:
+            import traceback
+            traceback.print_exc()
             raise MtpProtocolException(ResponseCodes.INVALID_DATASET)
