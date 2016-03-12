@@ -604,3 +604,13 @@ class MtpDeviceTests(BaseTestCase):
         response = response_message(request)
         self.dev.ResetDevicePropValue(request, response, None)
         self.assertEqual(response.code, ResponseCodes.ACCESS_DENIED)
+
+    def test_ResetDevicePropValueAll(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.ResetDevicePropValue, [0xffffffff])
+        response = response_message(request)
+        self.dev.ResetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.assertEqual(self.rw_prop.get_value(), self.rw_prop.default_value.pack())
+        self.assertNotEqual(self.ro_prop.get_value(), self.ro_prop.default_value.pack())
