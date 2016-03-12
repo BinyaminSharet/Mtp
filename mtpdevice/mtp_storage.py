@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from .mtp_base import MtpBaseObject
-from .mtp_proto import MU16, MU32, MU64, MStr, AccessCaps
+from .mtp_proto import AccessCaps
+from .mtp_data_types import UInt16, UInt32, UInt64, MStr
 
 
 class MtpStorage(MtpBaseObject):
@@ -38,10 +39,10 @@ class MtpStorage(MtpBaseObject):
         return handles
 
     def can_delete(self):
-        return self.info.access in [AccessCaps.READ_WRITE, AccessCaps.READ_ONLY_WITH_DELETE]
+        return self.info.access.value in [AccessCaps.READ_WRITE, AccessCaps.READ_ONLY_WITH_DELETE]
 
     def can_write(self):
-        return self.info.access == AccessCaps.READ_WRITE
+        return self.info.access.value == AccessCaps.READ_WRITE
 
 
 class MtpStorageInfo(object):
@@ -67,23 +68,23 @@ class MtpStorageInfo(object):
         :type vol_id: str
         :param vol_id: volume identifier
         '''
-        self.st_type = st_type
-        self.fs_type = fs_type
-        self.access = access
-        self.max_cap = max_cap
-        self.free_bytes = free_bytes
-        self.free_objs = free_objs
-        self.desc = desc
-        self.vol_id = vol_id
+        self.st_type = UInt16(st_type)
+        self.fs_type = UInt16(fs_type)
+        self.access = UInt16(access)
+        self.max_cap = UInt64(max_cap)
+        self.free_bytes = UInt64(free_bytes)
+        self.free_objs = UInt32(free_objs)
+        self.desc = MStr(desc)
+        self.vol_id = MStr(vol_id)
 
     def pack(self):
         return (
-            MU16(self.st_type) +
-            MU16(self.fs_type) +
-            MU16(self.access) +
-            MU64(self.max_cap) +
-            MU64(self.free_bytes) +
-            MU32(self.free_objs) +
-            MStr(self.desc) +
-            MStr(self.vol_id)
+            self.st_type.pack() +
+            self.fs_type.pack() +
+            self.access.pack() +
+            self.max_cap.pack() +
+            self.free_bytes.pack() +
+            self.free_objs.pack() +
+            self.desc.pack() +
+            self.vol_id.pack()
         )

@@ -1,5 +1,6 @@
 from __future__ import absolute_import
-from .mtp_proto import MU16, MU32, MStr, MArray, OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
+from .mtp_data_types import UInt16, UInt32, MStr, MArray
+from .mtp_proto import OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
 from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
 
@@ -51,14 +52,28 @@ def operation(opcode, num_params=None, session_required=True, ir_data_required=F
 
 class MtpDevice(object):
 
-    def __init__(self, info):
+    def __init__(self, info, properties=None):
         super(MtpDevice, self).__init__()
         self.info = info
+        self.info.set_device(self)
         self.stores = {}
         self.operations = operations
-        self.info.operations_supported = list(operations.keys())
+        for op in self.operations:
+            self.info.operations_supported.add_value(UInt16(op))
+        self.events = {}
+        for event in self.events:
+            self.info.events_supported.add_value(UInt16(event))
         self.session_id = None
         self.last_obj = None
+        self.properties = {}
+        if properties is None:
+            properties = []
+        for prop in properties:
+            self.add_property(prop)
+
+    def add_property(self, prop):
+        self.properties[prop.get_code()] = prop
+        self.info.properties.add_value(UInt16(prop.get_code()))
 
     def get_info(self):
         return self.info.pack()
@@ -98,8 +113,8 @@ class MtpDevice(object):
     @operation(OperationDataCodes.GetStorageIDs, num_params=0)
     def GetStorageIDs(self, command, response, ir_data):
         ids = list(self.stores.keys())
-        data = MArray(MU32, ids)
-        return mtp_data(command, data)
+        data = MArray(UInt32, ids)
+        return mtp_data(command, data.pack())
 
     @operation(OperationDataCodes.GetStorageInfo, num_params=1)
     def GetStorageInfo(self, command, response, ir_data):
@@ -114,7 +129,7 @@ class MtpDevice(object):
         handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         # .. todo:: assoc_handle filtering
         # assoc_handle = command.get_param(2)
-        return mtp_data(command, MU32(len(handles)))
+        return mtp_data(command, UInt32(len(handles)).pack())
 
     @operation(OperationDataCodes.GetObjectHandles, num_params=1)
     def GetObjectHandles(self, command, response, ir_data):
@@ -123,7 +138,7 @@ class MtpDevice(object):
         handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         # .. todo:: assoc_handle filtering
         # assoc_handle = command.get_param(2)
-        return mtp_data(command, MArray(MU32, handles))
+        return mtp_data(command, MArray(UInt32, handles).pack())
 
     @operation(OperationDataCodes.GetObjectInfo, num_params=1)
     def GetObjectInfo(self, command, response, ir_data):
@@ -214,9 +229,43 @@ class MtpDevice(object):
 
     @operation(OperationDataCodes.ResetDevice, num_params=0)
     def ResetDevice(self, command, response, ir_data):
-        if not self.session_id:
-            raise MtpProtocolException(ResponseCodes.SESSION_NOT_OPEN)
         self.session_id = None
+
+    @operation(OperationDataCodes.SelfTest, num_params=0)
+    def SelfTest(self, command, response, ir_data):
+        test_type = command.get_param(0)
+        self.run_self_test(test_type)
+
+    @operation(OperationDataCodes.SetObjectProtection, num_params=2)
+    def SetObjectProtection(self, command, response, ir_data):
+        handle = command.get_param(0)
+        prot_status = command.get_param(1)
+        obj = self.get_object(handle)
+        obj.set_protection_status(prot_status)
+
+    @operation(OperationDataCodes.PowerDown)
+    def PowerDown(self, command, response, ir_data):
+        self.session_id = None
+
+    @operation(OperationDataCodes.GetDevicePropDesc, num_params=1)
+    def GetDevicePropDesc(self, command, response, ir_data):
+        prop_code = command.get_param(0)
+        prop = self.get_property(prop_code)
+        return prop.get_desc()
+
+    @operation(OperationDataCodes.GetDevicePropValue, num_params=1)
+    def GetDevicePropValue(self, command, response, ir_data):
+        prop_code = command.get_param(0)
+        prop = self.get_property(prop_code)
+        return prop.get_value()
+
+    def get_property(self, prop_code):
+        if prop_code in self.properties:
+            return self.properties[prop_code]
+        raise MtpProtocolException(ResponseCodes.DEVICE_PROP_NOT_SUPPORTED)
+
+    def run_self_test(self, test_type):
+        pass
 
     def delete_all_objects(self, obj_fmt_code):
         deleted = False
@@ -284,8 +333,7 @@ class MtpDeviceInfo(object):
     def __init__(
         self,
         std_version, mtp_vendor_ext_id, mtp_version, mtp_extensions,
-        functional_mode, operations_supported, events_supported,
-        device_properties_supported, capture_formats, playback_formats,
+        functional_mode, capture_formats, playback_formats,
         manufacturer, model, device_version, serial_number
     ):
         '''
@@ -299,12 +347,6 @@ class MtpDeviceInfo(object):
         :param mtp_extensions: MTP Extensions
         :type functional_mode: 16bit uint
         :param functional_mode: Functional Mode
-        :type operations_supported: list of 16bit uint
-        :param operations_supported: Operations Supported
-        :type events_supported: list of 16bit uint
-        :param events_supported: Events Supported
-        :type device_properties_supported: list of 16bit uint
-        :param device_properties_supported: Device Properties Supported
         :type capture_formats: list of 16bit uint
         :param capture_formats: Capture Formats
         :type playback_formats: list of 16bit uint
@@ -318,35 +360,39 @@ class MtpDeviceInfo(object):
         :type serial_number: str
         :param serial_number: Serial Number
         '''
-        self.std_version = std_version
-        self.mtp_vendor_ext_id = mtp_vendor_ext_id
-        self.mtp_version = mtp_version
-        self.mtp_extensions = mtp_extensions
-        self.functional_mode = functional_mode
-        self.operations_supported = operations_supported
-        self.events_supported = events_supported
-        self.device_properties_supported = device_properties_supported
-        self.capture_formats = capture_formats
-        self.playback_formats = playback_formats
-        self.manufacturer = manufacturer
-        self.model = model
-        self.device_version = device_version
-        self.serial_number = serial_number
+        self.std_version = UInt16(std_version)
+        self.mtp_vendor_ext_id = UInt32(mtp_vendor_ext_id)
+        self.mtp_version = UInt16(mtp_version)
+        self.mtp_extensions = MStr(mtp_extensions)
+        self.functional_mode = UInt16(functional_mode)
+        self.operations_supported = MArray(UInt16, [])
+        self.events_supported = MArray(UInt16, [])
+        self.properties = MArray(UInt16, [])
+        self.capture_formats = MArray(UInt16, capture_formats)
+        self.playback_formats = MArray(UInt16, playback_formats)
+        self.manufacturer = MStr(manufacturer)
+        self.model = MStr(model)
+        self.device_version = MStr(device_version)
+        self.serial_number = MStr(serial_number)
+        self.device = None
+
+    def set_device(self, device):
+        self.device = device
 
     def pack(self):
         return (
-            MU16(self.std_version) +
-            MU32(self.mtp_vendor_ext_id) +
-            MU16(self.mtp_version) +
-            MStr(self.mtp_extensions) +
-            MU16(self.functional_mode) +
-            MArray(MU16, self.operations_supported) +
-            MArray(MU16, self.events_supported) +
-            MArray(MU16, self.device_properties_supported) +
-            MArray(MU16, self.capture_formats) +
-            MArray(MU16, self.playback_formats) +
-            MStr(self.manufacturer) +
-            MStr(self.model) +
-            MStr(self.device_version) +
-            MStr(self.serial_number)
+            self.std_version.pack() +
+            self.mtp_vendor_ext_id.pack() +
+            self.mtp_version.pack() +
+            self.mtp_extensions.pack() +
+            self.functional_mode.pack() +
+            self.operations_supported.pack() +
+            self.events_supported.pack() +
+            self.properties.pack() +
+            self.capture_formats.pack() +
+            self.playback_formats.pack() +
+            self.manufacturer.pack() +
+            self.model.pack() +
+            self.device_version.pack() +
+            self.serial_number.pack()
         )

@@ -1,11 +1,13 @@
+from struct import pack, unpack
+from binascii import unhexlify
 from common import BaseTestCase
 from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo
+from mtpdevice.mtp_device_property import MtpDeviceProperty, MtpPropertyCode
 from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import ContainerTypes, OperationDataCodes, ResponseCodes
 from mtpdevice.mtp_api import MtpApi
-from struct import pack, unpack
-from binascii import unhexlify
+from mtpdevice.mtp_data_types import UInt8
 
 
 class MtpApiTest(BaseTestCase):
@@ -34,9 +36,6 @@ class MtpApiTest(BaseTestCase):
             mtp_version=0x0708,
             mtp_extensions='Some Extension',
             functional_mode=0x0000,
-            operations_supported=[],
-            events_supported=[],
-            device_properties_supported=[],
             capture_formats=[],
             playback_formats=[],
             manufacturer='BinyaminSharet',
@@ -44,7 +43,10 @@ class MtpApiTest(BaseTestCase):
             device_version='1.2.3',
             serial_number='0123456789abcdef',
         )
-        self.dev = MtpDevice(self.dev_info)
+        properties = [
+            MtpDeviceProperty(MtpPropertyCode.DPC_BatteryLevel, 0, UInt8(50), UInt8(0))
+        ]
+        self.dev = MtpDevice(self.dev_info, properties)
         self.dev.add_storage(self.storage)
         self.api = MtpApi(self.dev)
 

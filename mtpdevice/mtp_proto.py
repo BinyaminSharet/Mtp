@@ -1,5 +1,5 @@
-from struct import pack, unpack
-import datetime
+from __future__ import absolute_import
+from .mtp_data_types import UInt16, UInt32
 
 
 class DataCodeTypes(object):
@@ -133,85 +133,5 @@ class AccessCaps(object):
     READ_ONLY_WITH_DELETE = 0x0002
 
 
-def MStr(s):
-    if len(s):
-        s += '\x00'
-        encoded = s.encode('utf-16le')  # should probably be some encoding...
-    else:
-        encoded = b''
-    return pack('B', len(s)) + encoded
-
-
-def MStr_unpack(buff):
-    '''
-    :return: tuple (unpacked string, rest of buffer)
-    '''
-    strlen = unpack('B', buff[0:1])[0]
-    encodedlen = (strlen * 2)
-    encoded = buff[1:encodedlen + 1]
-    decoded = encoded.decode('utf-16le')
-    resstr = decoded[:-1]
-    rest = buff[encodedlen + 1:]
-    return (resstr, rest)
-
-
-def MDateTime(secs):
-    dt = datetime.datetime.fromtimestamp(secs)
-    date_str = dt.strftime('%Y%m%dT%H%M%S')
-    return MStr(date_str)
-
-
-def MDateTime_unpack(buff):
-    '''
-    :return: tuple (unpacked time in seconds, rest of buffer)
-    '''
-    (date_str, rest) = MStr_unpack(buff)
-    if len(date_str):
-        dt = datetime.datetime.strptime(date_str, '%Y%m%dT%H%M%S')
-        return (int(dt.timestamp), rest)
-    else:
-        return (0, rest)
-
-
-def MArray(elem_type, elems):
-    res = b''
-    res += MU32(len(elems))
-    for elem in elems:
-        res += elem_type(elem)
-    return res
-
-
-def MU8(i):
-    return pack('<B', i)
-
-
-def MU8_unpack(buff):
-    return (unpack('<B', buff[:1])[0], buff[1:])
-
-
-def MU16(i):
-    return pack('<H', i)
-
-
-def MU16_unpack(buff):
-    return (unpack('<H', buff[:2])[0], buff[2:])
-
-
-def MU32(i):
-    return pack('<I', i)
-
-
-def MU32_unpack(buff):
-    return (unpack('<I', buff[:4])[0], buff[4:])
-
-
-def MU64(i):
-    return pack('<Q', i)
-
-
-def MU64_unpack(buff):
-    return (unpack('<Q', buff[:8])[0], buff[8:])
-
-
 def mtp_data(container, data):
-    return MU32(len(data) + 0xC) + MU16(ContainerTypes.Data) + MU16(container.code) + MU32(container.tid) + data
+    return UInt32(len(data) + 0xC).pack() + UInt16(ContainerTypes.Data).pack() + UInt16(container.code).pack() + UInt32(container.tid).pack() + data
