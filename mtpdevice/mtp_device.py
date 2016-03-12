@@ -70,6 +70,7 @@ class MtpDevice(object):
             properties = []
         for prop in properties:
             self.add_property(prop)
+        self.captures = {}
 
     def add_property(self, prop):
         self.properties[prop.get_code()] = prop
@@ -207,7 +208,7 @@ class MtpDevice(object):
         self.last_obj.set_data(ir_data.data, adhere_size=True)
         self.last_obj = None
 
-    # @operation(OperationDataCodes.InitiateCapture, num_params=0):
+    @operation(OperationDataCodes.InitiateCapture, num_params=0)
     def InitiateCapture(self, command, response, ir_data):
         '''
         .. todo::
@@ -275,6 +276,66 @@ class MtpDevice(object):
         else:
             prop = self.get_property(prop_code)
             prop.reset_value()
+
+    @operation(OperationDataCodes.TerminateOpenCapture, num_params=1)
+    def TerminateOpenCapture(self, command, response, ir_data):
+        '''
+        .. todo::
+
+            Currently we don't have any implementation for capture,
+            so this is kind of a lie ...
+        '''
+        tid = command.get_param(0)
+        self.terminate_open_capture(tid)
+
+    @operation(OperationDataCodes.MoveObject, num_params=3)
+    def MoveObject(self, command, response, ir_data):
+        obj_handle = command.get_param(0)
+        storage_id = command.get_param(1)
+        parent_handle = command.get_param(2)
+        obj = self.get_object(obj_handle)
+        store = self.get_storage(storage_id)
+        if parent_handle:
+            parent = self.get_objects(parent_handle)
+        else:
+            parent = store
+        if not store.can_write():
+            raise MtpProtocolException(ResponseCodes.STORE_READ_ONLY)
+        obj.delete(0xffffffff)
+        parent.add(obj)
+
+    @operation(OperationDataCodes.CopyObject, num_params=3)
+    def CopyObject(self, command, response, ir_data):
+        obj_handle = command.get_param(0)
+        storage_id = command.get_param(1)
+        parent_handle = command.get_param(2)
+        obj = self.get_object(obj_handle)
+        store = self.get_storage(storage_id)
+        if parent_handle:
+            parent = self.get_objects(parent_handle)
+        else:
+            parent = store
+        if not store.can_write():
+            raise MtpProtocolException(ResponseCodes.STORE_READ_ONLY)
+        new_obj = obj.copy()
+        parent.add(new_obj)
+        response.add_param(new_obj.get_uid())
+
+    @operation(OperationDataCodes.GetPartialObject, num_params=3)
+    def GetPartialObject(self, command, response, ir_data):
+        handle = command.get_param(0)
+        offset = command.get_param(1)
+        max_bytes = command.get_param(2)
+        obj = self.get_object(handle)
+        data = obj.data[offset:offset + max_bytes]
+        response.add_param(len(data))
+        return mtp_data(command, data)
+
+    def terminate_open_capture(self, tid):
+        if tid in self.captures:
+            self.captures[tid].terminate()
+        else:
+            raise MtpProtocolException(ResponseCodes.INVALID_TRANSACTION_ID)
 
     def get_property(self, prop_code):
         if prop_code in self.properties:

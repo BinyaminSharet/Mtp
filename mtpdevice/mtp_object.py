@@ -22,6 +22,16 @@ class MtpObject(MtpBaseObject):
         self.storage = None
         self.parent = None
 
+    def copy(self):
+        '''
+        .. todo:: copy properties ...
+        '''
+        new_data = None if self.data is None else self.data[:]
+        new_info = self.info.copy()
+        new_obj = MtpObject(new_data, new_info, self.properties)
+        for obj in self.objects:
+            new_obj.add_object(obj.copy())
+
     def get_info(self):
         return self.info.pack()
 
@@ -197,6 +207,29 @@ class MtpObjectInfo(object):
         self.ctime = MDateTime(ctime)
         self.mtime = MDateTime(mtime)
         self.keywords = MStr(keywords)
+
+    def copy(self):
+        return MtpObjectInfo(
+            self.storage.value,
+            self.object_format.value,
+            self.protection.value,
+            self.compressed_size.value,
+            self.thumb_format.value,
+            self.thumb_compressed_size.value,
+            self.thumb_pix_width.value,
+            self.thumb_pix_height.value,
+            self.image_pix_width.value,
+            self.image_pix_height.value,
+            self.image_bit_depth.value,
+            self.parent_object.value,
+            self.assoc_type.value,
+            self.assoc_desc.value,
+            self.seq_num.value,
+            self.filename.value,
+            self.ctime.value,
+            self.mtime.value,
+            self.keywords.value,
+        )
 
     def pack(self):
         res = b''
