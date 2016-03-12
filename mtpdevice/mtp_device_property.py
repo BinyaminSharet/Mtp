@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 from .mtp_data_types import UInt8, UInt16
+from .mtp_proto import ResponseCodes
+from .mtp_exception import MtpProtocolException
 
 
 class MtpPropertyCode(object):
@@ -242,6 +244,18 @@ class MtpDeviceProperty(object):
         self.value = value
         self.default_value = default_value
         self.form_flag = UInt8(0)
+
+    def can_set(self):
+        return self.perm.value == 1
+
+    def reset_value(self):
+        self.set_value(self.default_value.pack())
+
+    def set_value(self, new_value):
+        if self.can_set():
+            self.value.unpack(new_value)
+        else:
+            raise MtpProtocolException(ResponseCodes.ACCESS_DENIED)
 
     def get_code(self):
         return self.code.value

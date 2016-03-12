@@ -251,13 +251,30 @@ class MtpDevice(object):
     def GetDevicePropDesc(self, command, response, ir_data):
         prop_code = command.get_param(0)
         prop = self.get_property(prop_code)
-        return prop.get_desc()
+        return mtp_data(command, prop.get_desc())
 
     @operation(OperationDataCodes.GetDevicePropValue, num_params=1)
     def GetDevicePropValue(self, command, response, ir_data):
         prop_code = command.get_param(0)
         prop = self.get_property(prop_code)
-        return prop.get_value()
+        return mtp_data(command, prop.get_value())
+
+    @operation(OperationDataCodes.SetDevicePropValue, num_params=1, ir_data_required=True)
+    def SetDevicePropValue(self, command, response, ir_data):
+        prop_code = command.get_param(0)
+        prop = self.get_property(prop_code)
+        prop.set_value(ir_data.data)
+
+    @operation(OperationDataCodes.ResetDevicePropValue, num_params=1)
+    def ResetDevicePropValue(self, command, response, ir_data):
+        prop_code = command.get_param(0)
+        if prop_code == 0xffffffff:
+            for prop in self.properties.values():
+                if prop.can_set():
+                    prop.reset_value()
+        else:
+            prop = self.get_property(prop_code)
+            prop.reset_value()
 
     def get_property(self, prop_code):
         if prop_code in self.properties:

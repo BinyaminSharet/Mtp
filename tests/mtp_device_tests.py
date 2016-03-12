@@ -4,6 +4,8 @@ from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps, ContainerTypes
 from mtpdevice.mtp_msg import MtpParametersMessage, response_from_command, MtpMessage
+from mtpdevice.mtp_device_property import MtpDeviceProperty
+from mtpdevice.mtp_data_types import UInt8
 from struct import pack
 from binascii import unhexlify
 
@@ -447,3 +449,158 @@ class MtpDeviceTests(BaseTestCase):
         data = data_message(request.tid, request.code, obj_info_dataset)
         self.dev.SendObjectInfo(request, response, data)
         self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def set_default_device_properties(self):
+        self.ro_prop = MtpDeviceProperty(1, 0, UInt8(5), UInt8(0))
+        self.rw_prop = MtpDeviceProperty(2, 1, UInt8(5), UInt8(0))
+        self.dev.add_property(self.ro_prop)
+        self.dev.add_property(self.rw_prop)
+
+    def test_GetDevicePropDescBeforeOpenSession(self):
+        self.set_default_device_properties()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropDesc, [1])
+        response = response_message(request)
+        self.dev.GetDevicePropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_GetDevicePropDescAfterOpenSession(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropDesc, [self.ro_prop.code.value])
+        response = response_message(request)
+        data = self.dev.GetDevicePropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.assertEqual(data[12:], self.ro_prop.get_desc())
+
+    def test_GetDevicePropDescInvalidPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropDesc, [5])
+        response = response_message(request)
+        self.dev.GetDevicePropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.DEVICE_PROP_NOT_SUPPORTED)
+
+    def test_GetDevicePropDescNoPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropDesc, [])
+        response = response_message(request)
+        self.dev.GetDevicePropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_GetDevicePropValueBeforeOpenSession(self):
+        self.set_default_device_properties()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropValue, [1])
+        response = response_message(request)
+        self.dev.GetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_GetDevicePropValueAfterOpenSession(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropValue, [self.ro_prop.code.value])
+        response = response_message(request)
+        data = self.dev.GetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.assertEqual(data[12:], self.ro_prop.get_value())
+
+    def test_GetDevicePropValueInvalidPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropValue, [5])
+        response = response_message(request)
+        self.dev.GetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.DEVICE_PROP_NOT_SUPPORTED)
+
+    def test_GetDevicePropValueNoPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetDevicePropValue, [])
+        response = response_message(request)
+        self.dev.GetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_SetDevicePropValueBeforeOpenSession(self):
+        self.set_default_device_properties()
+        request = command_message(self.new_transaction(), OperationDataCodes.SetDevicePropValue, [self.rw_prop.code.value])
+        response = response_message(request)
+        ir_data = data_message(request.tid, request.code, unhexlify('28'))
+        self.dev.SetDevicePropValue(request, response, ir_data)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_SetDevicePropValueAfterOpenSession(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.SetDevicePropValue, [self.rw_prop.code.value])
+        response = response_message(request)
+        ir_data = data_message(request.tid, request.code, unhexlify('28'))
+        self.dev.SetDevicePropValue(request, response, ir_data)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.assertEqual(ir_data.data, self.rw_prop.get_value())
+
+    def test_SetDevicePropValueInvalidPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.SetDevicePropValue, [5])
+        response = response_message(request)
+        ir_data = data_message(request.tid, request.code, unhexlify('28'))
+        self.dev.SetDevicePropValue(request, response, ir_data)
+        self.assertEqual(response.code, ResponseCodes.DEVICE_PROP_NOT_SUPPORTED)
+
+    def test_SetDevicePropValueNoPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.SetDevicePropValue, [])
+        response = response_message(request)
+        ir_data = data_message(request.tid, request.code, unhexlify('28'))
+        self.dev.SetDevicePropValue(request, response, ir_data)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_SetDevicePropValueReadOnly(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.SetDevicePropValue, [self.ro_prop.code.value])
+        response = response_message(request)
+        ir_data = data_message(request.tid, request.code, unhexlify('28'))
+        self.dev.SetDevicePropValue(request, response, ir_data)
+        self.assertEqual(response.code, ResponseCodes.ACCESS_DENIED)
+
+    def test_ResetDevicePropValueBeforeOpenSession(self):
+        self.set_default_device_properties()
+        request = command_message(self.new_transaction(), OperationDataCodes.ResetDevicePropValue, [self.rw_prop.code.value])
+        response = response_message(request)
+        self.dev.ResetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_ResetDevicePropValueAfterOpenSession(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.ResetDevicePropValue, [self.rw_prop.code.value])
+        response = response_message(request)
+        self.dev.ResetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.assertEqual(self.rw_prop.get_value(), self.rw_prop.default_value.pack())
+
+    def test_ResetDevicePropValueInvalidPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.ResetDevicePropValue, [5])
+        response = response_message(request)
+        self.dev.ResetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.DEVICE_PROP_NOT_SUPPORTED)
+
+    def test_ResetDevicePropValueNoPropCode(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.ResetDevicePropValue, [])
+        response = response_message(request)
+        self.dev.ResetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_ResetDevicePropValueReadOnly(self):
+        self.set_default_device_properties()
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.ResetDevicePropValue, [self.ro_prop.code.value])
+        response = response_message(request)
+        self.dev.ResetDevicePropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.ACCESS_DENIED)
