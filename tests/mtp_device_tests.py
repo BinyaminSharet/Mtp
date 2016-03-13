@@ -4,10 +4,10 @@ from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import OperationDataCodes, ResponseCodes, AccessCaps, ContainerTypes
 from mtpdevice.mtp_msg import MtpParametersMessage, response_from_command, MtpMessage
-from mtpdevice.mtp_device_property import MtpDeviceProperty
+from mtpdevice.mtp_property import MtpDeviceProperty, MtpObjectPropertyCode
 from mtpdevice.mtp_data_types import UInt8
 from struct import pack
-from binascii import unhexlify
+from binascii import unhexlify, hexlify
 
 
 def command_message(tid, code, params=None):
@@ -614,3 +614,67 @@ class MtpDeviceTests(BaseTestCase):
         self.assertEqual(response.code, ResponseCodes.OK)
         self.assertEqual(self.rw_prop.get_value(), self.rw_prop.default_value.pack())
         self.assertNotEqual(self.ro_prop.get_value(), self.ro_prop.default_value.pack())
+
+    def test_GetObjectPropsSupportedBeforeOpenSession(self):
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropsSupported, [0xffffffff])
+        response = response_message(request)
+        self.dev.GetObjectPropsSupported(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_GetObjectPropsSupportedAfterOpenSession(self):
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropsSupported, [0xffffffff])
+        response = response_message(request)
+        data = self.dev.GetObjectPropsSupported(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.logger.debug('data: %s' % hexlify(data))
+
+    def test_GetObjectPropDescBeforeOpenSession(self):
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropDesc, [MtpObjectPropertyCode.Name, 0xffffffff])
+        response = response_message(request)
+        self.dev.GetObjectPropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_GetObjectPropDescAfterOpenSession(self):
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropDesc, [MtpObjectPropertyCode.Name, 0xffffffff])
+        response = response_message(request)
+        data = self.dev.GetObjectPropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.logger.debug('data: %s' % hexlify(data))
+        self.assertEqual(data[12:], unhexlify('44dcffff00000000000000'))
+
+    def test_GetObjectPropDescWithoutParams(self):
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropDesc, [])
+        response = response_message(request)
+        self.dev.GetObjectPropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_GetObjectPropDescWithoutFormatCode(self):
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropDesc, [MtpObjectPropertyCode.Name])
+        response = response_message(request)
+        self.dev.GetObjectPropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
+
+    def test_GetObjectPropDescUnsupportedPropCode(self):
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropDesc, [1, 0xffffffff])
+        response = response_message(request)
+        self.dev.GetObjectPropDesc(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OBJECT_PROP_NOT_SUPPORTED)
+
+    def test_GetObjectPropValueBeforeOpenSession(self):
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropValue, [self.object.get_uid(), MtpObjectPropertyCode.Name])
+        response = response_message(request)
+        self.dev.GetObjectPropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.SESSION_NOT_OPEN)
+
+    def test_GetObjectPropValueAfterOpenSession(self):
+        self.successful_open_session()
+        request = command_message(self.new_transaction(), OperationDataCodes.GetObjectPropValue, [self.object.get_uid(), MtpObjectPropertyCode.Name])
+        response = response_message(request)
+        data = self.dev.GetObjectPropValue(request, response, None)
+        self.assertEqual(response.code, ResponseCodes.OK)
+        self.logger.debug('data: %s' % hexlify(data))

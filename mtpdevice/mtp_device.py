@@ -186,7 +186,7 @@ class MtpDevice(object):
                 parent_uid = 0xffffffff
             if store.can_write():
                 obj_info = MtpObjectInfo.from_buff(ir_data.data)
-                obj = MtpObject(None, obj_info, [])
+                obj = MtpObject(None, obj_info)
                 parent.add_object(obj)
                 response.add_param(store.get_uid())
                 response.add_param(parent_uid)
@@ -208,7 +208,7 @@ class MtpDevice(object):
         self.last_obj.set_data(ir_data.data, adhere_size=True)
         self.last_obj = None
 
-    @operation(OperationDataCodes.InitiateCapture, num_params=0)
+    # @operation(OperationDataCodes.InitiateCapture, num_params=0)
     def InitiateCapture(self, command, response, ir_data):
         '''
         .. todo::
@@ -277,7 +277,7 @@ class MtpDevice(object):
             prop = self.get_property(prop_code)
             prop.reset_value()
 
-    @operation(OperationDataCodes.TerminateOpenCapture, num_params=1)
+    # @operation(OperationDataCodes.TerminateOpenCapture, num_params=1)
     def TerminateOpenCapture(self, command, response, ir_data):
         '''
         .. todo::
@@ -331,6 +331,39 @@ class MtpDevice(object):
         response.add_param(len(data))
         return mtp_data(command, data)
 
+    # @operation(OperationDataCodes.InitiateOpenCapture, num_params=0)
+    def InitiateOpenCapture(self, command, response, ir_data):
+        raise MtpProtocolException(ResponseCodes.OPERATION_NOT_SUPPORTED)
+
+    @operation(OperationDataCodes.GetObjectPropsSupported, num_params=1)
+    def GetObjectPropsSupported(self, command, response, ir_data):
+        obj_fmt_code = command.get_param(0)
+        props_supported = MtpObject.get_supported_props(obj_fmt_code)
+        return mtp_data(command, MArray(UInt16, props_supported).pack())
+
+    @operation(OperationDataCodes.GetObjectPropDesc, num_params=2)
+    def GetObjectPropDesc(self, command, response, ir_data):
+        obj_prop_code = command.get_param(0)
+        obj_fmt_code = command.get_param(1)
+        obj_prop_desc = MtpObject.get_obj_prop_desc(obj_prop_code, obj_fmt_code)
+        return mtp_data(command, obj_prop_desc.pack())
+
+    @operation(OperationDataCodes.GetObjectPropValue, num_params=2)
+    def GetObjectPropValue(self, command, response, ir_data):
+        obj_handle = command.get_param(0)
+        obj_prop_code = command.get_param(1)
+        obj = self.get_object(obj_handle)
+        obj_prop = obj.get_property(obj_prop_code)
+        return mtp_data(command, obj_prop.pack())
+
+    @operation(OperationDataCodes.SetObjectPropValue, num_params=2, ir_data_required=True)
+    def SetObjectPropValue(self, command, response, ir_data):
+        obj_handle = command.get_param(0)
+        obj_prop_code = command.get_param(1)
+        obj = self.get_object(obj_handle)
+        obj_prop = obj.get_property(obj_prop_code)
+        obj_prop.set_value(ir_data.data)
+
     def terminate_open_capture(self, tid):
         if tid in self.captures:
             self.captures[tid].terminate()
@@ -355,7 +388,7 @@ class MtpDevice(object):
                     obj.delete(obj_fmt_code)
                     deleted = True
                 except MtpProtocolException as ex:
-                    if ex.status == ResponseCodes.PARTIAL_DELETION:
+                    if ex.response == ResponseCodes.PARTIAL_DELETION:
                         deleted = True
                     undeleted = True
         if undeleted:

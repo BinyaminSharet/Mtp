@@ -115,11 +115,13 @@ def UInt128(value=0):
 
 class MArray(MtpDataType):
 
-    def __init__(self, ftype, values):
+    def __init__(self, ftype, values, ltype=None):
+        if ltype is None:
+            ltype = UInt32
         self.pseudo = ftype(0)
         self.ftype = ftype
         self.value = []
-        self.length = UInt32(0)
+        self.length = ltype(0)
         super(MArray, self).__init__(self.pseudo.dtype | 0x4000, values)
 
     def set_value(self, value):
@@ -145,8 +147,12 @@ class MArray(MtpDataType):
             (v, rest) = self.pseudo.unpack(rest)
             values.append(v)
         self.set_value(values)
-        self.size = 4 + (length * self.pseudo.size)
+        self.size = self.length.size + (length * self.pseudo.size)
         return values
+
+
+def MEnum(ftype, values):
+    return MArray(ftype, values, UInt16)
 
 
 class MStr(MtpDataType):

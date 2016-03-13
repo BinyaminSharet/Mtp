@@ -4,19 +4,36 @@ Object Properties and Object References
 '''
 from __future__ import absolute_import
 import os
-from .mtp_data_types import UInt32, UInt16, MStr, MDateTime
+from .mtp_data_types import UInt32, UInt16, UInt64, UInt128, MStr, MDateTime
 from .mtp_base import MtpBaseObject
 from .mtp_proto import ResponseCodes
 from .mtp_exception import MtpProtocolException
+from .mtp_property import MtpObjectProperty as ObjProp
+from .mtp_property import MtpObjectPropertyDescriptions as PropDescs
 
 
 class MtpObject(MtpBaseObject):
 
-    def __init__(self, data, info, properties):
+    props_descs = {
+        PropDescs.StorageID.get_code(): PropDescs.StorageID,
+        PropDescs.ObjectFormat.get_code(): PropDescs.ObjectFormat,
+        PropDescs.ProtectionStatus.get_code(): PropDescs.ProtectionStatus,
+        PropDescs.ObjectSize.get_code(): PropDescs.ObjectSize,
+        PropDescs.AssociationType.get_code(): PropDescs.AssociationType,
+        PropDescs.AssociationDesc.get_code(): PropDescs.AssociationDesc,
+        PropDescs.ObjectFileName.get_code(): PropDescs.ObjectFileName,
+        PropDescs.DateCreated.get_code(): PropDescs.DateCreated,
+        PropDescs.DateModified.get_code(): PropDescs.DateModified,
+        PropDescs.Keywords.get_code(): PropDescs.Keywords,
+        PropDescs.ParentObject.get_code(): PropDescs.ParentObject,
+        PropDescs.PersistantUniqueObjectIdentifier.get_code(): PropDescs.PersistantUniqueObjectIdentifier,
+        PropDescs.Name.get_code(): PropDescs.Name,
+    }
+
+    def __init__(self, data, info):
         super(MtpObject, self).__init__()
         self.info = info
         self.set_data(data)
-        self.properties = properties
         self.real_path = None
         self.objects = []
         self.storage = None
@@ -28,12 +45,17 @@ class MtpObject(MtpBaseObject):
         '''
         new_data = None if self.data is None else self.data[:]
         new_info = self.info.copy()
-        new_obj = MtpObject(new_data, new_info, self.properties)
+        new_obj = MtpObject(new_data, new_info)
         for obj in self.objects:
             new_obj.add_object(obj.copy())
 
     def get_info(self):
         return self.info.pack()
+
+    def get_property(self, prop_code):
+        if prop_code in self.info.props:
+            return self.info.props[prop_code]
+        raise MtpProtocolException(ResponseCodes.OBJECT_PROP_NOT_SUPPORTED)
 
     def get_objects(self):
         return self.objects[:]
@@ -44,13 +66,13 @@ class MtpObject(MtpBaseObject):
         obj.set_storage(self.storage)
 
     def set_parent(self, parent):
-        self.info.parent_object.set_value(0 if not parent else parent.get_uid())
+        self.info.parent_object.value.set_value(0 if not parent else parent.get_uid())
         self.parent = parent
 
     def set_storage(self, storage):
         self.storage = storage
         if self.storage:
-            self.info.storage.set_value(storage.get_uid())
+            self.info.storage.value.set_value(storage.get_uid())
         # TODO: recursion loop??
         for obj in self.objects:
             obj.set_storage(storage)
@@ -72,10 +94,10 @@ class MtpObject(MtpBaseObject):
 
     def set_data(self, data, adhere_size=False):
         if adhere_size:
-            if len(data) > self.info.compressed_size.value:
+            if len(data) > self.info.compressed_size.value.value:
                 raise MtpProtocolException(ResponseCodes.STORE_FULL)
         if self.info and (data is not None):
-            self.info.compressed_size.set_value(len(data))
+            self.info.compressed_size.value.set_value(len(data))
         self.data = data
 
     def get_thumb(self, obj):
@@ -84,8 +106,9 @@ class MtpObject(MtpBaseObject):
     def format_matches(self, fmt):
         return (
             fmt == self.info.object_format.value or
-            fmt == 0xffffffff or
+            fmt in [0xffffffff, None] or
             self.info.object_format.value == 0x00000000
+
         )
 
     def set_protection_status(self, status):
@@ -125,6 +148,22 @@ class MtpObject(MtpBaseObject):
         if not self.storage.can_delete():
             raise MtpProtocolException(ResponseCodes.OBJECT_WRITE_PROTECTED)
         self.delete_internal(fmt)
+
+    @classmethod
+    def get_obj_prop_desc(cls, obj_prop_code, obj_fmt_code):
+        '''
+        :return: ObjectPropertyDesc
+        '''
+        if obj_prop_code in MtpObject.props_descs:
+            return MtpObject.props_descs[obj_prop_code]
+        raise MtpProtocolException(ResponseCodes.OBJECT_PROP_NOT_SUPPORTED)
+
+    @classmethod
+    def get_supported_props(cls, obj_fmt_code):
+        '''
+        :return: array of object property codes
+        '''
+        return list(MtpObject.props_descs.keys())
 
     @classmethod
     def from_fs_recursive(cls, path):
@@ -172,7 +211,6 @@ class MtpObject(MtpBaseObject):
         obj = MtpObject(
             data=data,
             info=info,
-            properties=[],
         )
         obj.real_path = path
         return obj
@@ -188,10 +226,16 @@ class MtpObjectInfo(object):
         parent_object, assoc_type, assoc_desc, seq_num,
         filename, ctime, mtime, keywords
     ):
-        self.storage = UInt32(storage)
-        self.object_format = UInt16(object_format)
-        self.protection = UInt16(protection)
-        self.compressed_size = UInt32(compressed_size)
+        self.props = {}
+        self.storage = ObjProp(PropDescs.StorageID, UInt32(storage))
+        self.props[self.storage.get_code()] = self.storage
+        self.object_format = ObjProp(PropDescs.ObjectFormat, UInt16(object_format))
+        self.props[self.object_format.get_code()] = self.object_format
+        self.protection = ObjProp(PropDescs.ProtectionStatus, UInt16(protection))
+        self.props[self.protection.get_code()] = self.protection
+        # need to cut out lower 32 bits, as in info it is only 32bit.
+        self.compressed_size = ObjProp(PropDescs.ObjectSize, UInt64(compressed_size))
+        self.props[self.compressed_size.get_code()] = self.compressed_size
         self.thumb_format = UInt16(thumb_format)
         self.thumb_compressed_size = UInt32(thumb_compressed_size)
         self.thumb_pix_width = UInt32(thumb_pix_width)
@@ -199,36 +243,49 @@ class MtpObjectInfo(object):
         self.image_pix_width = UInt32(image_pix_width)
         self.image_pix_height = UInt32(image_pix_height)
         self.image_bit_depth = UInt32(image_bit_depth)
-        self.parent_object = UInt32(parent_object)
-        self.assoc_type = UInt16(assoc_type)
-        self.assoc_desc = UInt32(assoc_desc)
+        self.parent_object = ObjProp(PropDescs.ParentObject, UInt32(parent_object))
+        self.props[self.parent_object.get_code()] = self.parent_object
+        self.assoc_type = ObjProp(PropDescs.AssociationType, UInt16(assoc_type))
+        self.props[self.assoc_type.get_code()] = self.assoc_type
+        self.assoc_desc = ObjProp(PropDescs.AssociationDesc, UInt32(assoc_desc))
+        self.props[self.assoc_desc.get_code()] = self.assoc_desc
         self.seq_num = UInt32(seq_num)
-        self.filename = MStr(filename)
-        self.ctime = MDateTime(ctime)
-        self.mtime = MDateTime(mtime)
-        self.keywords = MStr(keywords)
+        self.filename = ObjProp(PropDescs.ObjectFileName, MStr(filename))
+        self.props[self.filename.get_code()] = self.filename
+        self.ctime = ObjProp(PropDescs.DateCreated, MDateTime(ctime))
+        self.props[self.ctime.get_code()] = self.ctime
+        self.mtime = ObjProp(PropDescs.DateModified, MDateTime(mtime))
+        self.props[self.mtime.get_code()] = self.mtime
+        self.keywords = ObjProp(PropDescs.Keywords, MStr(keywords))
+        self.props[self.keywords.get_code()] = self.keywords
+
+        # The following should not be packed ....
+        self.name = ObjProp(PropDescs.Name, MStr(filename))
+        self.props[self.name.get_code()] = self.name
+        self.unique_id = ObjProp(PropDescs.PersistantUniqueObjectIdentifier, UInt128(0))
+        self.props[self.unique_id.get_code()] = self.unique_id
 
     def copy(self):
         return MtpObjectInfo(
-            self.storage.value,
-            self.object_format.value,
-            self.protection.value,
-            self.compressed_size.value,
-            self.thumb_format.value,
-            self.thumb_compressed_size.value,
-            self.thumb_pix_width.value,
-            self.thumb_pix_height.value,
-            self.image_pix_width.value,
-            self.image_pix_height.value,
-            self.image_bit_depth.value,
-            self.parent_object.value,
-            self.assoc_type.value,
-            self.assoc_desc.value,
-            self.seq_num.value,
-            self.filename.value,
-            self.ctime.value,
-            self.mtime.value,
-            self.keywords.value,
+            self.storage.value.value,
+            self.object_format.value.value,
+            self.protection.value.value,
+            self.compressed_size.value.value,
+            self.thumb_format.value.value,
+            self.thumb_compressed_size.value.value,
+            self.thumb_pix_width.value.value,
+            self.thumb_pix_height.value.value,
+            self.image_pix_width.value.value,
+            self.image_pix_height.value.value,
+            self.image_bit_depth.value.value,
+            self.parent_object.value.value,
+            self.assoc_type.value.value,
+            self.assoc_desc.value.value,
+            self.seq_num.value.value,
+            self.filename.value.value,
+            self.ctime.value.value,
+            self.mtime.value.value,
+            self.keywords.value.value,
         )
 
     def pack(self):
@@ -238,7 +295,7 @@ class MtpObjectInfo(object):
         res += self.protection.pack()
         res += self.compressed_size.pack()
         res += self.thumb_format.pack()
-        res += self.thumb_compressed_size.pack()
+        res += self.thumb_compressed_size.pack()[:4]
         res += self.thumb_pix_width.pack()
         res += self.thumb_pix_height.pack()
         res += self.image_pix_width.pack()

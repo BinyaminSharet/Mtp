@@ -2,7 +2,7 @@ from struct import pack, unpack
 from binascii import unhexlify
 from common import BaseTestCase
 from mtpdevice.mtp_device import MtpDevice, MtpDeviceInfo
-from mtpdevice.mtp_device_property import MtpDeviceProperty, MtpPropertyCode
+from mtpdevice.mtp_property import MtpDeviceProperty, MtpDevicePropertyCode
 from mtpdevice.mtp_storage import MtpStorage, MtpStorageInfo
 from mtpdevice.mtp_object import MtpObject
 from mtpdevice.mtp_proto import ContainerTypes, OperationDataCodes, ResponseCodes
@@ -44,7 +44,7 @@ class MtpApiTest(BaseTestCase):
             serial_number='0123456789abcdef',
         )
         properties = [
-            MtpDeviceProperty(MtpPropertyCode.DPC_BatteryLevel, 0, UInt8(50), UInt8(0))
+            MtpDeviceProperty(MtpDevicePropertyCode.BatteryLevel, 0, UInt8(50), UInt8(0))
         ]
         self.dev = MtpDevice(self.dev_info, properties)
         self.dev.add_storage(self.storage)
