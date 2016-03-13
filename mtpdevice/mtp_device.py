@@ -3,6 +3,7 @@ from .mtp_data_types import UInt16, UInt32, MStr, MArray
 from .mtp_proto import OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
 from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
+from binascii import hexlify
 
 
 operations = {}
@@ -14,11 +15,12 @@ class Operation(object):
         self.ir_data = ir_data
 
 
-def operation(opcode, num_params=None, session_required=True, ir_data_required=False):
+def operation(opcode, name, num_params=None, session_required=True, ir_data_required=False):
     '''
     Decorator for an API operation function
 
     :param opcode: operation code
+    :param name: name of the operation
     :param num_params: number of parameter the operation expects (default: None)
     :param session_required: is the operation requires a session (default: True)
     :param ir_data_required: is data expected from the initiator (default: False)
@@ -26,6 +28,11 @@ def operation(opcode, num_params=None, session_required=True, ir_data_required=F
 
     def decorator(func):
         def wrapper(self, command, response, ir_data):
+            print('[MtpDevice] --------------------------------------------------')
+            print('[MtpDevice] handling command: %#x (%s)' % (command.code, name))
+            print('[MtpDevice] params: %s' % (' '.join('%#x' % command.get_param(i) for i in range(command.num_params()))))
+            if ir_data:
+                print('[MtpDevice] I->R data: %s' % (hexlify(ir_data.data)))
             try:
                 if num_params is not None:
                     if command.ctype != ContainerTypes.Command:
@@ -40,6 +47,10 @@ def operation(opcode, num_params=None, session_required=True, ir_data_required=F
             except MtpProtocolException as ex:
                 response.code = ex.response
                 res = None
+            if res and len(res) > 12:
+                print('[MtpDevice] R->I data: %s' % hexlify(res[12:]))
+            print('[MtpDevice] response: %#x' % response.code)
+            print('[MtpDevice] --------------------------------------------------')
             return res
 
         if opcode in operations:
@@ -71,6 +82,10 @@ class MtpDevice(object):
         for prop in properties:
             self.add_property(prop)
         self.captures = {}
+        self.fuzzer = None
+
+    def set_fuzzer(self, fuzzer):
+        self.fuzzer = fuzzer
 
     def add_property(self, prop):
         self.properties[prop.get_code()] = prop
@@ -96,34 +111,33 @@ class MtpDevice(object):
             return self.operations[ccode].handler(self, command, response, ir_data)
         return None
 
-    @operation(OperationDataCodes.GetDeviceInfo, num_params=0, session_required=False)
+    @operation(OperationDataCodes.GetDeviceInfo, 'GetDeviceInfo', num_params=0, session_required=False)
     def GetDeviceInfo(self, command, response, ir_data):
         return mtp_data(command, self.get_info())
 
-    # @operation(OperationDataCodes., num_params=None, session_required=True)
-    @operation(OperationDataCodes.OpenSession, num_params=1, session_required=False)
+    @operation(OperationDataCodes.OpenSession, 'OpenSession', num_params=1, session_required=False)
     def OpenSession(self, command, response, ir_data):
-        if self.session_id:
-            raise MtpProtocolException(ResponseCodes.SESSION_ALREADY_OPEN)
+        # if self.session_id:
+        #     raise MtpProtocolException(ResponseCodes.SESSION_ALREADY_OPEN)
         self.session_id = command.params[0]
 
-    @operation(OperationDataCodes.CloseSession, num_params=0)
+    @operation(OperationDataCodes.CloseSession, 'CloseSession', num_params=0)
     def CloseSession(self, command, response, ir_data):
         self.session_id = None
 
-    @operation(OperationDataCodes.GetStorageIDs, num_params=0)
+    @operation(OperationDataCodes.GetStorageIDs, 'GetStorageIDs', num_params=0)
     def GetStorageIDs(self, command, response, ir_data):
         ids = list(self.stores.keys())
         data = MArray(UInt32, ids)
         return mtp_data(command, data.pack())
 
-    @operation(OperationDataCodes.GetStorageInfo, num_params=1)
+    @operation(OperationDataCodes.GetStorageInfo, 'GetStorageInfo', num_params=1)
     def GetStorageInfo(self, command, response, ir_data):
         storage_id = command.get_param(0)
         storage = self.get_storage(storage_id)
         return mtp_data(command, storage.get_info())
 
-    @operation(OperationDataCodes.GetNumObjects, num_params=1)
+    @operation(OperationDataCodes.GetNumObjects, 'GetNumObjects', num_params=1)
     def GetNumObjects(self, command, response, ir_data):
         storage_id = command.get_param(0)
         obj_fmt_code = command.get_param(1)
@@ -132,7 +146,7 @@ class MtpDevice(object):
         # assoc_handle = command.get_param(2)
         return mtp_data(command, UInt32(len(handles)).pack())
 
-    @operation(OperationDataCodes.GetObjectHandles, num_params=1)
+    @operation(OperationDataCodes.GetObjectHandles, 'GetObjectHandles', num_params=1)
     def GetObjectHandles(self, command, response, ir_data):
         storage_id = command.get_param(0)
         obj_fmt_code = command.get_param(1)
@@ -141,25 +155,25 @@ class MtpDevice(object):
         # assoc_handle = command.get_param(2)
         return mtp_data(command, MArray(UInt32, handles).pack())
 
-    @operation(OperationDataCodes.GetObjectInfo, num_params=1)
+    @operation(OperationDataCodes.GetObjectInfo, 'GetObjectInfo', num_params=1)
     def GetObjectInfo(self, command, response, ir_data):
         handle = command.get_param(0)
         obj = self.get_object(handle)
         return mtp_data(command, obj.get_info())
 
-    @operation(OperationDataCodes.GetObject, num_params=1)
+    @operation(OperationDataCodes.GetObject, 'GetObject', num_params=1)
     def GetObject(self, command, response, ir_data):
         handle = command.get_param(0)
         obj = self.get_object(handle)
         return mtp_data(command, obj.data)
 
-    @operation(OperationDataCodes.GetThumb, num_params=1)
+    @operation(OperationDataCodes.GetThumb, 'GetThumb', num_params=1)
     def GetThumb(self, command, response, ir_data):
         handle = command.get_param(0)
         obj = self.get_object(handle)
         return mtp_data(command, obj.get_thumb())
 
-    @operation(OperationDataCodes.DeleteObject, num_params=1)
+    @operation(OperationDataCodes.DeleteObject, 'DeleteObject', num_params=1)
     def DeleteObject(self, command, response, ir_data):
         handle = command.get_param(0)
         obj_fmt_code = command.get_param(1)
@@ -169,7 +183,7 @@ class MtpDevice(object):
             obj = self.get_object(handle)
             obj.delete(0xffffffff)
 
-    @operation(OperationDataCodes.SendObjectInfo, num_params=1, ir_data_required=True)
+    @operation(OperationDataCodes.SendObjectInfo, 'SendObjectInfo', num_params=1, ir_data_required=True)
     def SendObjectInfo(self, command, response, ir_data):
         '''
         .. todo:: complete !!
@@ -201,14 +215,14 @@ class MtpDevice(object):
             # This might not be accurate, but I'm willing to play with that for now
             raise MtpProtocolException(ResponseCodes.INVALID_STORAGE_ID)
 
-    @operation(OperationDataCodes.SendObject, num_params=0, ir_data_required=True)
+    @operation(OperationDataCodes.SendObject, 'SendObject', num_params=0, ir_data_required=True)
     def SendObject(self, command, response, ir_data):
         if not self.last_obj:
             raise MtpProtocolException(ResponseCodes.NO_VALID_OBJECT_INFO)
         self.last_obj.set_data(ir_data.data, adhere_size=True)
         self.last_obj = None
 
-    # @operation(OperationDataCodes.InitiateCapture, num_params=0)
+    # @operation(OperationDataCodes.InitiateCapture, 'InitiateCapture', num_params=0)
     def InitiateCapture(self, command, response, ir_data):
         '''
         .. todo::
@@ -219,7 +233,7 @@ class MtpDevice(object):
         '''
         raise MtpProtocolException(ResponseCodes.OPERATION_NOT_SUPPORTED)
 
-    @operation(OperationDataCodes.FormatStore, num_params=1)
+    @operation(OperationDataCodes.FormatStore, 'FormatStore', num_params=1)
     def FormatStore(self, command, response, ir_data):
         '''
         Current implementation will NOT perform a format
@@ -228,45 +242,45 @@ class MtpDevice(object):
         self.get_storage(storage_id)
         raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
-    @operation(OperationDataCodes.ResetDevice, num_params=0)
+    @operation(OperationDataCodes.ResetDevice, 'ResetDevice', num_params=0)
     def ResetDevice(self, command, response, ir_data):
         self.session_id = None
 
-    @operation(OperationDataCodes.SelfTest, num_params=0)
+    @operation(OperationDataCodes.SelfTest, 'SelfTest', num_params=0)
     def SelfTest(self, command, response, ir_data):
         test_type = command.get_param(0)
         self.run_self_test(test_type)
 
-    @operation(OperationDataCodes.SetObjectProtection, num_params=2)
+    @operation(OperationDataCodes.SetObjectProtection, 'SetObjectProtection', num_params=2)
     def SetObjectProtection(self, command, response, ir_data):
         handle = command.get_param(0)
         prot_status = command.get_param(1)
         obj = self.get_object(handle)
         obj.set_protection_status(prot_status)
 
-    @operation(OperationDataCodes.PowerDown)
+    @operation(OperationDataCodes.PowerDown, 'PowerDown')
     def PowerDown(self, command, response, ir_data):
         self.session_id = None
 
-    @operation(OperationDataCodes.GetDevicePropDesc, num_params=1)
+    @operation(OperationDataCodes.GetDevicePropDesc, 'GetDevicePropDesc', num_params=1)
     def GetDevicePropDesc(self, command, response, ir_data):
         prop_code = command.get_param(0)
         prop = self.get_property(prop_code)
         return mtp_data(command, prop.get_desc())
 
-    @operation(OperationDataCodes.GetDevicePropValue, num_params=1)
+    @operation(OperationDataCodes.GetDevicePropValue, 'GetDevicePropValue', num_params=1)
     def GetDevicePropValue(self, command, response, ir_data):
         prop_code = command.get_param(0)
         prop = self.get_property(prop_code)
         return mtp_data(command, prop.get_value())
 
-    @operation(OperationDataCodes.SetDevicePropValue, num_params=1, ir_data_required=True)
+    @operation(OperationDataCodes.SetDevicePropValue, 'SetDevicePropValue', num_params=1, ir_data_required=True)
     def SetDevicePropValue(self, command, response, ir_data):
         prop_code = command.get_param(0)
         prop = self.get_property(prop_code)
         prop.set_value(ir_data.data)
 
-    @operation(OperationDataCodes.ResetDevicePropValue, num_params=1)
+    @operation(OperationDataCodes.ResetDevicePropValue, 'ResetDevicePropValue', num_params=1)
     def ResetDevicePropValue(self, command, response, ir_data):
         prop_code = command.get_param(0)
         if prop_code == 0xffffffff:
@@ -277,7 +291,7 @@ class MtpDevice(object):
             prop = self.get_property(prop_code)
             prop.reset_value()
 
-    # @operation(OperationDataCodes.TerminateOpenCapture, num_params=1)
+    # @operation(OperationDataCodes.TerminateOpenCapture, 'TerminateOpenCapture', num_params=1)
     def TerminateOpenCapture(self, command, response, ir_data):
         '''
         .. todo::
@@ -288,7 +302,7 @@ class MtpDevice(object):
         tid = command.get_param(0)
         self.terminate_open_capture(tid)
 
-    @operation(OperationDataCodes.MoveObject, num_params=3)
+    @operation(OperationDataCodes.MoveObject, 'MoveObject', num_params=3)
     def MoveObject(self, command, response, ir_data):
         obj_handle = command.get_param(0)
         storage_id = command.get_param(1)
@@ -304,7 +318,7 @@ class MtpDevice(object):
         obj.delete(0xffffffff)
         parent.add(obj)
 
-    @operation(OperationDataCodes.CopyObject, num_params=3)
+    @operation(OperationDataCodes.CopyObject, 'CopyObject', num_params=3)
     def CopyObject(self, command, response, ir_data):
         obj_handle = command.get_param(0)
         storage_id = command.get_param(1)
@@ -321,7 +335,7 @@ class MtpDevice(object):
         parent.add(new_obj)
         response.add_param(new_obj.get_uid())
 
-    @operation(OperationDataCodes.GetPartialObject, num_params=3)
+    @operation(OperationDataCodes.GetPartialObject, 'GetPartialObject', num_params=3)
     def GetPartialObject(self, command, response, ir_data):
         handle = command.get_param(0)
         offset = command.get_param(1)
@@ -331,24 +345,24 @@ class MtpDevice(object):
         response.add_param(len(data))
         return mtp_data(command, data)
 
-    # @operation(OperationDataCodes.InitiateOpenCapture, num_params=0)
+    # @operation(OperationDataCodes.InitiateOpenCapture, 'InitiateOpenCapture', num_params=0)
     def InitiateOpenCapture(self, command, response, ir_data):
         raise MtpProtocolException(ResponseCodes.OPERATION_NOT_SUPPORTED)
 
-    @operation(OperationDataCodes.GetObjectPropsSupported, num_params=1)
+    @operation(OperationDataCodes.GetObjectPropsSupported, 'GetObjectPropsSupported', num_params=1)
     def GetObjectPropsSupported(self, command, response, ir_data):
         obj_fmt_code = command.get_param(0)
         props_supported = MtpObject.get_supported_props(obj_fmt_code)
         return mtp_data(command, MArray(UInt16, props_supported).pack())
 
-    @operation(OperationDataCodes.GetObjectPropDesc, num_params=2)
+    @operation(OperationDataCodes.GetObjectPropDesc, 'GetObjectPropDesc', num_params=2)
     def GetObjectPropDesc(self, command, response, ir_data):
         obj_prop_code = command.get_param(0)
         obj_fmt_code = command.get_param(1)
         obj_prop_desc = MtpObject.get_obj_prop_desc(obj_prop_code, obj_fmt_code)
         return mtp_data(command, obj_prop_desc.pack())
 
-    @operation(OperationDataCodes.GetObjectPropValue, num_params=2)
+    @operation(OperationDataCodes.GetObjectPropValue, 'GetObjectPropValue', num_params=2)
     def GetObjectPropValue(self, command, response, ir_data):
         obj_handle = command.get_param(0)
         obj_prop_code = command.get_param(1)
@@ -356,13 +370,37 @@ class MtpDevice(object):
         obj_prop = obj.get_property(obj_prop_code)
         return mtp_data(command, obj_prop.pack())
 
-    @operation(OperationDataCodes.SetObjectPropValue, num_params=2, ir_data_required=True)
+    @operation(OperationDataCodes.SetObjectPropValue, 'SetObjectPropValue', num_params=2, ir_data_required=True)
     def SetObjectPropValue(self, command, response, ir_data):
         obj_handle = command.get_param(0)
         obj_prop_code = command.get_param(1)
         obj = self.get_object(obj_handle)
         obj_prop = obj.get_property(obj_prop_code)
         obj_prop.set_value(ir_data.data)
+
+    @operation(OperationDataCodes.GetObjectPropList, 'GetObjectPropList', num_params=5)
+    def GetObjectPropList(self, command, response, ir_data):
+        '''
+        .. todo:: real implementation
+        '''
+        obj_handle = command.get_param(0)
+        # obj_fmt_code = command.get_param(1)
+        obj_prop_code = command.get_param(2)
+        # obj_prop_group_code = command.get_param(3)
+        # depth = command.get_param(4)
+        obj = self.get_object(obj_handle)
+        prop = obj.get_property(obj_prop_code)
+        return mtp_data(command, prop.pack())
+
+    @operation(OperationDataCodes.GetObjectReferences, 'GetObjectReferences', num_params=1)
+    def GetObjectReferences(self, command, response, ir_data):
+        '''
+        .. todo:: real implementation
+        '''
+        obj_handle = command.get_param(0)
+        obj = self.get_object(obj_handle)
+        refs = [o.get_uid() for o in obj.get_objects()]
+        return mtp_data(command, MArray(UInt32, refs).pack())
 
     def terminate_open_capture(self, tid):
         if tid in self.captures:
@@ -437,6 +475,20 @@ class MtpDevice(object):
         if storage_id not in self.stores:
             raise MtpProtocolException(ResponseCodes.INVALID_STORAGE_ID)
         return self.stores[storage_id]
+
+    def __str__(self):
+        s = ''
+        for store_id, store in self.stores.items():
+            s += 'Store %#x:\n\t' % (store_id)
+            for handle in store.get_handles():
+                s += '%04x, ' % handle
+        s += '\nproperties:\n\t'
+        for prop in self.properties:
+            s += '%04x, ' % prop
+        s += '\noperations:\n\t'
+        for op in self.operations:
+            s += '%04x, ' % op
+        return s
 
 
 class MtpDeviceInfo(object):

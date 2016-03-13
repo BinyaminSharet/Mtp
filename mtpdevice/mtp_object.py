@@ -105,8 +105,9 @@ class MtpObject(MtpBaseObject):
 
     def format_matches(self, fmt):
         return (
+            not fmt or
             fmt == self.info.object_format.value or
-            fmt in [0xffffffff, None] or
+            fmt == 0xffffffff or
             self.info.object_format.value == 0x00000000
 
         )

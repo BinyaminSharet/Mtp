@@ -8,6 +8,7 @@ class MtpStorage(MtpBaseObject):
 
     def __init__(self, info):
         super(MtpStorage, self).__init__()
+        self.uid |= 0x00020000
         self.info = info
         self.dev = None
         self.objects = []
