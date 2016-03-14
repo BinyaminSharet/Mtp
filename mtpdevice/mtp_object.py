@@ -185,6 +185,8 @@ class MtpObject(MtpBaseObject):
     @classmethod
     def from_file(cls, path):
         # TODO: handle cases othe than regular file here ...
+        if not os.path.exists(path):
+            raise Exception('there is no file/dir at %s' % os.path.abspath(path))
         if os.path.isfile(path):
             with open(path, 'rb') as f:
                 data = f.read()
