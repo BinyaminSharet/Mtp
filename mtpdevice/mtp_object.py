@@ -92,8 +92,11 @@ class MtpObject(MtpBaseObject):
         if self.format_matches(fmt):
             handles = [self.uid]
         for obj in self.objects:
-            handles.extend(obj.get_handles())
+            handles.extend(obj.get_handles(fmt))
         return handles
+
+    def get_handles_at_root(self, fmt=None):
+        return [obj.get_uid() for obj in self.objects if obj.format_matches(fmt)]
 
     def set_data(self, data, adhere_size=False):
         if adhere_size:
@@ -473,7 +476,8 @@ class Formats(object):
             'wav': Formats.WAV,
             'm3u': Formats.M3UPlaylist,
             'html': Formats.HTML,
-            'mht': Formats.MHTCompiledHTMLDocument
+            'mht': Formats.MHTCompiledHTMLDocument,
+            'wma': Formats.WMA,
         }
         if os.path.isdir(path):
             return Formats.Association

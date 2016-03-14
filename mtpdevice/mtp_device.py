@@ -4,6 +4,7 @@ from .mtp_proto import OperationDataCodes, ResponseCodes, mtp_data, ContainerTyp
 from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
 from binascii import hexlify
+import struct
 
 
 operations = {}
@@ -33,22 +34,33 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
             print('[MtpDevice] params: %s' % (' '.join('%#x' % command.get_param(i) for i in range(command.num_params()))))
             if ir_data:
                 print('[MtpDevice] I->R data: %s' % (hexlify(ir_data.data)))
-            try:
-                if num_params is not None:
-                    if command.ctype != ContainerTypes.Command:
-                        raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT)
-                    if command.num_params() < num_params:
-                        raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
-                if session_required and (self.session_id is None):
-                    raise MtpProtocolException(ResponseCodes.SESSION_NOT_OPEN)
-                if ir_data_required and (ir_data is None):
-                    raise MtpProtocolException(ResponseCodes.INVALID_DATASET)
-                res = func(self, command, response, ir_data)
-            except MtpProtocolException as ex:
-                response.code = ex.response
-                res = None
+            res = None
+            if self.fuzzer:
+                res = self.fuzzer.get_mutation(
+                    stage=name,
+                    data={
+                        'command': struct.pack('<H', command.code),
+                        'transaction_id': struct.pack('<I', command.tid)
+                    })
+            if res is not None:
+                print('[MtpDevice] got mutation from fuzzer')
+            else:
+                try:
+                    if num_params is not None:
+                        if command.ctype != ContainerTypes.Command:
+                            raise MtpProtocolException(ResponseCodes.INVALID_CODE_FORMAT)
+                        if command.num_params() < num_params:
+                            raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
+                    if session_required and (self.session_id is None):
+                        raise MtpProtocolException(ResponseCodes.SESSION_NOT_OPEN)
+                    if ir_data_required and (ir_data is None):
+                        raise MtpProtocolException(ResponseCodes.INVALID_DATASET)
+                    res = func(self, command, response, ir_data)
+                except MtpProtocolException as ex:
+                    response.code = ex.response
+                    res = None
             if res and len(res) > 12:
-                print('[MtpDevice] R->I data: %s' % (hexlify(res[12:])))
+                print('[MtpDevice] R->I data: %s' % (hexlify(res[12:60])))
             print('[MtpDevice] response: %#x' % response.code)
             return res
 
@@ -152,11 +164,9 @@ class MtpDevice(object):
         assoc_handle = command.get_param(2)
         if assoc_handle and (assoc_handle != 0xffffffff):
             obj = self.get_object(assoc_handle)
-            handles = obj.get_handles(obj_fmt_code)
-            # remove the first handle, as it refers to the association itself
-            handles = handles[1:]
         else:
-            handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
+            obj = self.get_storage(storage_id)
+        handles = obj.get_handles_at_root(obj_fmt_code)
         return mtp_data(command, MArray(UInt32, handles).pack())
 
     @operation(OperationDataCodes.GetObjectInfo, 'GetObjectInfo', num_params=1)

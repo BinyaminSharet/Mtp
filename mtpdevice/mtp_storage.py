@@ -39,6 +39,9 @@ class MtpStorage(MtpBaseObject):
             handles.extend(obj.get_handles())
         return handles
 
+    def get_handles_at_root(self, fmt=None):
+        return [obj.get_uid() for obj in self.objects if obj.format_matches(fmt)]
+
     def can_delete(self):
         return self.info.access.value in [AccessCaps.READ_WRITE, AccessCaps.READ_ONLY_WITH_DELETE]
 
