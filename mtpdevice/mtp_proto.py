@@ -137,5 +137,16 @@ class AccessCaps(object):
     READ_ONLY_WITH_DELETE = 0x0002
 
 
+class AssociationType(object):
+    UNDEFINED = 0x0000
+    GENERIC_FOLDER = 0x0001
+    ALBUM = 0x0002
+    TIME_SEQUENCE = 0x0003
+    PANORAMIC_HORIZONTAL = 0x0004
+    PANORAMIC_VERTICAL = 0x0005
+    PANORAMIC_2D = 0x0006
+    ANCILLARY_DATA = 0x0007
+
+
 def mtp_data(container, data):
     return UInt32(len(data) + 0xC).pack() + UInt16(ContainerTypes.Data).pack() + UInt16(container.code).pack() + UInt32(container.tid).pack() + data

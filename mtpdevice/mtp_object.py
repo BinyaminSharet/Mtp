@@ -38,6 +38,7 @@ class MtpObject(MtpBaseObject):
         self.objects = []
         self.storage = None
         self.parent = None
+        self.info.unique_id.value.set_value(self.get_uid())
 
     def copy(self):
         '''
@@ -86,8 +87,10 @@ class MtpObject(MtpBaseObject):
                 return res
         return None
 
-    def get_handles(self):
-        handles = [self.uid]
+    def get_handles(self, fmt=None):
+        handles = []
+        if self.format_matches(fmt):
+            handles = [self.uid]
         for obj in self.objects:
             handles.extend(obj.get_handles())
         return handles
@@ -109,7 +112,6 @@ class MtpObject(MtpBaseObject):
             fmt == self.info.object_format.value or
             fmt == 0xffffffff or
             self.info.object_format.value == 0x00000000
-
         )
 
     def set_protection_status(self, status):
@@ -188,9 +190,10 @@ class MtpObject(MtpBaseObject):
         filename = os.path.split(path)[-1]
         mtime = int(os.path.getmtime(path))
         ctime = int(os.path.getctime(path))
+        object_format = Formats.guess(path)
         info = MtpObjectInfo(
             storage=0,
-            object_format=0,
+            object_format=object_format,
             protection=0,
             compressed_size=0,
             thumb_format=0,
@@ -365,3 +368,116 @@ class MtpObjectInfo(object):
             import traceback
             traceback.print_exc()
             raise MtpProtocolException(ResponseCodes.INVALID_DATASET)
+
+
+class Formats(object):
+    # ancillary formats
+    Undefined = 0x3000
+    Association = 0x3001
+    Script = 0x3002
+    Executable = 0x3003
+    Text = 0x3004
+    HTML = 0x3005
+    DPOF = 0x3006
+    AIFF = 0x3007
+    WAV = 0x3008
+    MP3 = 0x3009
+    AVI = 0x300A
+    MPEG = 0x300B
+    ASF = 0x300C
+    QT = 0x300D  # guessing
+    # image formats
+    EXIF_JPEG = 0x3801
+    TIFF_EP = 0x3802
+    FlashPix = 0x3803
+    BMP = 0x3804
+    CIFF = 0x3805
+    GIF = 0x3807
+    JFIF = 0x3808
+    PCD = 0x3809
+    PICT = 0x380A
+    PNG = 0x380B
+    TIFF = 0x380D
+    TIFF_IT = 0x380E
+    JP2 = 0x380F
+    JPX = 0x3810
+    DNG = 0x3811
+    # MTP extensions
+    MediaCard = 0xb211
+    MediaCardGroup = 0xb212
+    Encounter = 0xb213
+    EncounterBox = 0xb214
+    M4A = 0xb215
+    ZUNEUNDEFINED = 0xb217  # Unknown file type
+    Firmware = 0xb802
+    WindowsImageFormat = 0xb881
+    UndefinedAudio = 0xb900
+    WMA = 0xb901
+    OGG = 0xb902
+    AAC = 0xb903
+    AudibleCodec = 0xb904
+    FLAC = 0xb906
+    SamsungPlaylist = 0xb909
+    UndefinedVideo = 0xb980
+    WMV = 0xb981
+    MP4 = 0xb982
+    MP2 = 0xb983
+    _3GP = 0xb984
+    UndefinedCollection = 0xba00
+    AbstractMultimediaAlbum = 0xba01
+    AbstractImageAlbum = 0xba02
+    AbstractAudioAlbum = 0xba03
+    AbstractVideoAlbum = 0xba04
+    AbstractAudioVideoPlaylist = 0xba05
+    AbstractContactGroup = 0xba06
+    AbstractMessageFolder = 0xba07
+    AbstractChapteredProduction = 0xba08
+    AbstractAudioPlaylist = 0xba09
+    AbstractVideoPlaylist = 0xba0a
+    AbstractMediacast = 0xba0b
+    WPLPlaylist = 0xba10
+    M3UPlaylist = 0xba11
+    MPLPlaylist = 0xba12
+    ASXPlaylist = 0xba13
+    PLSPlaylist = 0xba14
+    UndefinedDocument = 0xba80
+    AbstractDocument = 0xba81
+    XMLDocument = 0xba82
+    MSWordDocument = 0xba83
+    MHTCompiledHTMLDocument = 0xba84
+    MSExcelSpreadsheetXLS = 0xba85
+    MSPowerpointPresentationPPT = 0xba86
+    UndefinedMessage = 0xbb00
+    AbstractMessage = 0xbb01
+    UndefinedContact = 0xbb80
+    AbstractContact = 0xbb81
+    vCard2 = 0xbb82
+    vCard3 = 0xbb83
+    UndefinedCalendarItem = 0xbe00
+    AbstractCalendarItem = 0xbe01
+    vCalendar1 = 0xbe02
+    vCalendar2 = 0xbe03
+    UndefinedWindowsExecutable = 0xbe80
+    MediaCast = 0xbe81
+    Section = 0xbe82
+
+    @classmethod
+    def guess(cls, path):
+        ext_format = {
+            'mp3': Formats.MP3,
+            'avi': Formats.AVI,
+            'jpg': Formats.EXIF_JPEG,
+            'jpeg': Formats.EXIF_JPEG,
+            'png': Formats.PNG,
+            'bmp': Formats.BMP,
+            'wav': Formats.WAV,
+            'm3u': Formats.M3UPlaylist,
+            'html': Formats.HTML,
+            'mht': Formats.MHTCompiledHTMLDocument
+        }
+        if os.path.isdir(path):
+            return Formats.Association
+        ext = path.split('.')[-1].lower()
+        if ext in ext_format:
+            return ext_format[ext]
+        return Formats.Undefined

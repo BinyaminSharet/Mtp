@@ -84,15 +84,6 @@ class MtpDeviceTests(BaseTestCase):
         self.assertEqual(response.code, ResponseCodes.PARAMETER_NOT_SUPPORTED)
         self.assertIsNone(self.dev.session_id)
 
-    def test_OpenSessionTwice(self):
-        self.successful_open_session()
-
-        request = command_message(self.new_transaction(), OperationDataCodes.OpenSession, [2])
-        response = response_message(request)
-        self.dev.OpenSession(request, response, None)
-        self.assertEqual(response.code, ResponseCodes.SESSION_ALREADY_OPEN)
-        self.assertEqual(self.dev.session_id, 1)
-
     def test_CloseSessionAfterOpenSession(self):
         self.successful_open_session()
 

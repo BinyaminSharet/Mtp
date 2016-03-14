@@ -48,9 +48,8 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
                 response.code = ex.response
                 res = None
             if res and len(res) > 12:
-                print('[MtpDevice] R->I data: %s' % hexlify(res[12:]))
+                print('[MtpDevice] R->I data: %s' % (hexlify(res[12:])))
             print('[MtpDevice] response: %#x' % response.code)
-            print('[MtpDevice] --------------------------------------------------')
             return res
 
         if opcode in operations:
@@ -150,9 +149,14 @@ class MtpDevice(object):
     def GetObjectHandles(self, command, response, ir_data):
         storage_id = command.get_param(0)
         obj_fmt_code = command.get_param(1)
-        handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
-        # .. todo:: assoc_handle filtering
-        # assoc_handle = command.get_param(2)
+        assoc_handle = command.get_param(2)
+        if assoc_handle and (assoc_handle != 0xffffffff):
+            obj = self.get_object(assoc_handle)
+            handles = obj.get_handles(obj_fmt_code)
+            # remove the first handle, as it refers to the association itself
+            handles = handles[1:]
+        else:
+            handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
         return mtp_data(command, MArray(UInt32, handles).pack())
 
     @operation(OperationDataCodes.GetObjectInfo, 'GetObjectInfo', num_params=1)
@@ -389,8 +393,18 @@ class MtpDevice(object):
         # obj_prop_group_code = command.get_param(3)
         # depth = command.get_param(4)
         obj = self.get_object(obj_handle)
-        prop = obj.get_property(obj_prop_code)
-        return mtp_data(command, prop.pack())
+        if obj_prop_code == 0xffffffff:
+            props = obj.info.props.values()
+        else:
+            props = [obj.get_property(obj_prop_code)]
+        num_elems = len(props)
+        data = UInt32(num_elems).pack()
+        for v in props:
+            data += UInt32(obj_handle).pack()
+            data += v.desc.code.pack()
+            data += v.desc.dtype.pack()
+            data += v.pack()
+        return mtp_data(command, data)
 
     @operation(OperationDataCodes.GetObjectReferences, 'GetObjectReferences', num_params=1)
     def GetObjectReferences(self, command, response, ir_data):
