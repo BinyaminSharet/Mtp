@@ -5,6 +5,7 @@ from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
 from binascii import hexlify
 import struct
+import logging
 
 
 operations = {}
@@ -29,11 +30,11 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
 
     def decorator(func):
         def wrapper(self, command, response, ir_data):
-            print('[MtpDevice] --------------------------------------------------')
-            print('[MtpDevice] handling command: %#x (%s)' % (command.code, name))
-            print('[MtpDevice] params: %s' % (' '.join('%#x' % command.get_param(i) for i in range(command.num_params()))))
+            self.logger.info('[MtpDevice] --------------------------------------------------')
+            self.logger.info('[MtpDevice] handling command: %#x (%s)' % (command.code, name))
+            self.logger.info('[MtpDevice] params: %s' % (' '.join('%#x' % command.get_param(i) for i in range(command.num_params()))))
             if ir_data:
-                print('[MtpDevice] I->R data: %s' % (hexlify(ir_data.data)))
+                self.logger.info('[MtpDevice] I->R data: %s' % (hexlify(ir_data.data)))
             res = None
             if self.fuzzer:
                 res = self.fuzzer.get_mutation(
@@ -43,7 +44,7 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
                         'transaction_id': struct.pack('<I', command.tid)
                     })
             if res is not None:
-                print('[MtpDevice] got mutation from fuzzer')
+                self.logger.info('[MtpDevice] got mutation from fuzzer')
             else:
                 try:
                     if num_params is not None:
@@ -60,8 +61,8 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
                     response.code = ex.response
                     res = None
             if res and len(res) > 12:
-                print('[MtpDevice] R->I data: %s' % (hexlify(res[12:60])))
-            print('[MtpDevice] response: %#x' % response.code)
+                self.logger.info('[MtpDevice] R->I data: %s' % (hexlify(res[12:60])))
+            self.logger.info('[MtpDevice] response: %#x' % response.code)
             return res
 
         if opcode in operations:
@@ -74,8 +75,12 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
 
 class MtpDevice(object):
 
-    def __init__(self, info, properties=None):
+    def __init__(self, info, properties=None, logger=None):
         super(MtpDevice, self).__init__()
+        if logger is None:
+            self.logger = logging.getLogger('MtpDevice')
+        else:
+            self.logger = logger
         self.info = info
         self.info.set_device(self)
         self.stores = {}
@@ -164,9 +169,16 @@ class MtpDevice(object):
         assoc_handle = command.get_param(2)
         if assoc_handle and (assoc_handle != 0xffffffff):
             obj = self.get_object(assoc_handle)
+            handles = obj.get_handles_at_root(obj_fmt_code)
         else:
-            obj = self.get_storage(storage_id)
-        handles = obj.get_handles_at_root(obj_fmt_code)
+            handles = []
+            if storage_id != 0xffffffff:
+                stores = [self.get_storage(storage_id)]
+            else:
+                stores = self.stores.values()
+            for store in stores:
+                handles.extend(store.get_handles_at_root(obj_fmt_code))
+
         return mtp_data(command, MArray(UInt32, handles).pack())
 
     @operation(OperationDataCodes.GetObjectInfo, 'GetObjectInfo', num_params=1)
