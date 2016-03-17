@@ -28,19 +28,14 @@ class MtpStorage(MtpBaseObject):
         obj.set_storage(self)
 
     def get_objects(self):
-        return self.objects[:]
+        objs = []
+        for obj in self.objects:
+            objs.append(obj)
+            objs.extend(obj.get_objects())
+        return objs
 
     def set_device(self, dev):
         self.dev = dev
-
-    def get_handles(self):
-        handles = []
-        for obj in self.objects:
-            handles.extend(obj.get_handles())
-        return handles
-
-    def get_handles_at_root(self, fmt=None):
-        return [obj.get_uid() for obj in self.objects if obj.format_matches(fmt)]
 
     def can_delete(self):
         return self.info.access.value in [AccessCaps.READ_WRITE, AccessCaps.READ_ONLY_WITH_DELETE]

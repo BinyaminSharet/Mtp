@@ -59,7 +59,11 @@ class MtpObject(MtpBaseObject):
         raise MtpProtocolException(ResponseCodes.OBJECT_PROP_NOT_SUPPORTED)
 
     def get_objects(self):
-        return self.objects[:]
+        objs = []
+        for obj in self.objects:
+            objs.append(obj)
+            objs.extend(obj.get_objects())
+        return objs
 
     def add_object(self, obj):
         self.objects.append(obj)
@@ -67,6 +71,8 @@ class MtpObject(MtpBaseObject):
         obj.set_storage(self.storage)
 
     def set_parent(self, parent):
+        if parent in self.objects:
+            raise Exception('Parent %s is also in %s objects' % (parent, self))
         self.info.parent_object.value.set_value(0 if not parent else parent.get_uid())
         self.parent = parent
 
@@ -79,24 +85,15 @@ class MtpObject(MtpBaseObject):
             obj.set_storage(storage)
 
     def get_object(self, handle):
+        res = None
         if self.uid == handle:
-            return self
-        for obj in self.objects:
-            res = obj.get_object(handle)
-            if res is not None:
-                return res
-        return None
-
-    def get_handles(self, fmt=None):
-        handles = []
-        if self.format_matches(fmt):
-            handles = [self.uid]
-        for obj in self.objects:
-            handles.extend(obj.get_handles(fmt))
-        return handles
-
-    def get_handles_at_root(self, fmt=None):
-        return [obj.get_uid() for obj in self.objects if obj.format_matches(fmt)]
+            res = self
+        if res is None:
+            for obj in self.objects:
+                res = obj.get_object(handle)
+                if res:
+                    break
+        return res
 
     def set_data(self, data, adhere_size=False):
         if adhere_size:
@@ -111,10 +108,10 @@ class MtpObject(MtpBaseObject):
 
     def format_matches(self, fmt):
         return (
-            not fmt or
-            fmt == self.info.object_format.value or
-            fmt == 0xffffffff or
-            self.info.object_format.value == 0x00000000
+            (not fmt) or
+            (fmt == self.info.object_format.value.value) or
+            (fmt == 0xffffffff) or
+            (self.info.object_format.value.value) == 0x00000000
         )
 
     def set_protection_status(self, status):
@@ -130,7 +127,7 @@ class MtpObject(MtpBaseObject):
             raise MtpProtocolException(ResponseCodes.SPECIFICATION_BY_FORMAT_UNSUPPORTED)
         if self.parent:
             self.parent.objects.remove(self)
-        else:
+        elif self.storage:
             self.storage.objects.remove(self)
 
     def delete_internal(self, fmt):
@@ -196,6 +193,7 @@ class MtpObject(MtpBaseObject):
         mtime = int(os.path.getmtime(path))
         ctime = int(os.path.getctime(path))
         object_format = Formats.guess(path)
+        assoc_type = 1 if object_format == Formats.Association else 0
         info = MtpObjectInfo(
             storage=0,
             object_format=object_format,
@@ -209,7 +207,7 @@ class MtpObject(MtpBaseObject):
             image_pix_height=0,
             image_bit_depth=0,
             parent_object=0,
-            assoc_type=0,
+            assoc_type=assoc_type,
             assoc_desc=0,
             seq_num=0,
             filename=filename,

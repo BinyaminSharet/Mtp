@@ -144,41 +144,28 @@ class MtpDevice(object):
     @operation(OperationDataCodes.GetStorageIDs, 'GetStorageIDs', num_params=0)
     def GetStorageIDs(self, command, response, ir_data):
         ids = list(self.stores.keys())
-        data = MArray(UInt32, ids)
-        return mtp_data(command, data.pack())
+        return mtp_data(command, MArray(UInt32, ids).pack())
 
     @operation(OperationDataCodes.GetStorageInfo, 'GetStorageInfo', num_params=1)
     def GetStorageInfo(self, command, response, ir_data):
-        storage_id = command.get_param(0)
-        storage = self.get_storage(storage_id)
+        store_id = command.get_param(0)
+        storage = self.get_store(store_id)
         return mtp_data(command, storage.get_info())
 
     @operation(OperationDataCodes.GetNumObjects, 'GetNumObjects', num_params=1)
     def GetNumObjects(self, command, response, ir_data):
-        storage_id = command.get_param(0)
+        store_id = command.get_param(0)
         obj_fmt_code = command.get_param(1)
-        handles = self.get_handles_for_store_id(storage_id, obj_fmt_code)
-        # .. todo:: assoc_handle filtering
-        # assoc_handle = command.get_param(2)
-        return mtp_data(command, UInt32(len(handles)).pack())
+        assoc_handle = command.get_param(2)
+        objs = self.get_objects(store_id=store_id, obj_fmt_code=obj_fmt_code, association=assoc_handle)
+        return mtp_data(command, UInt32(len(objs)).pack())
 
     @operation(OperationDataCodes.GetObjectHandles, 'GetObjectHandles', num_params=1)
     def GetObjectHandles(self, command, response, ir_data):
-        storage_id = command.get_param(0)
+        store_id = command.get_param(0)
         obj_fmt_code = command.get_param(1)
         assoc_handle = command.get_param(2)
-        if assoc_handle and (assoc_handle != 0xffffffff):
-            obj = self.get_object(assoc_handle)
-            handles = obj.get_handles_at_root(obj_fmt_code)
-        else:
-            handles = []
-            if storage_id != 0xffffffff:
-                stores = [self.get_storage(storage_id)]
-            else:
-                stores = self.stores.values()
-            for store in stores:
-                handles.extend(store.get_handles_at_root(obj_fmt_code))
-
+        handles = self.get_handles(store_id=store_id, obj_fmt_code=obj_fmt_code, association=assoc_handle)
         return mtp_data(command, MArray(UInt32, handles).pack())
 
     @operation(OperationDataCodes.GetObjectInfo, 'GetObjectInfo', num_params=1)
@@ -214,16 +201,16 @@ class MtpDevice(object):
         '''
         .. todo:: complete !!
         '''
-        storage_id = command.get_param(0)
+        store_id = command.get_param(0)
         parent_handle = command.get_param(1)
-        if storage_id:
-            store = self.get_storage(storage_id)
+        if store_id:
+            store = self.get_store(store_id)
             if parent_handle:
                 parent = store.get_object(parent_handle)
                 parent_uid = parent.get_uid()
             else:
                 parent = store
-                parent_uid = 0xffffffff
+                parent_uid = 0
             if store.can_write():
                 obj_info = MtpObjectInfo.from_buff(ir_data.data)
                 obj = MtpObject(None, obj_info)
@@ -264,8 +251,8 @@ class MtpDevice(object):
         '''
         Current implementation will NOT perform a format
         '''
-        storage_id = command.get_param(0)
-        self.get_storage(storage_id)
+        store_id = command.get_param(0)
+        self.get_store(store_id)
         raise MtpProtocolException(ResponseCodes.PARAMETER_NOT_SUPPORTED)
 
     @operation(OperationDataCodes.ResetDevice, 'ResetDevice', num_params=0)
@@ -331,26 +318,26 @@ class MtpDevice(object):
     @operation(OperationDataCodes.MoveObject, 'MoveObject', num_params=3)
     def MoveObject(self, command, response, ir_data):
         obj_handle = command.get_param(0)
-        storage_id = command.get_param(1)
+        store_id = command.get_param(1)
         parent_handle = command.get_param(2)
         obj = self.get_object(obj_handle)
-        store = self.get_storage(storage_id)
+        store = self.get_store(store_id)
         if parent_handle:
             parent = self.get_objects(parent_handle)
         else:
             parent = store
         if not store.can_write():
             raise MtpProtocolException(ResponseCodes.STORE_READ_ONLY)
-        obj.delete(0xffffffff)
+        obj.delete_self(0xffffffff)
         parent.add(obj)
 
     @operation(OperationDataCodes.CopyObject, 'CopyObject', num_params=3)
     def CopyObject(self, command, response, ir_data):
         obj_handle = command.get_param(0)
-        storage_id = command.get_param(1)
+        store_id = command.get_param(1)
         parent_handle = command.get_param(2)
         obj = self.get_object(obj_handle)
-        store = self.get_storage(storage_id)
+        store = self.get_store(store_id)
         if parent_handle:
             parent = self.get_objects(parent_handle)
         else:
@@ -455,37 +442,39 @@ class MtpDevice(object):
     def delete_all_objects(self, obj_fmt_code):
         deleted = False
         undeleted = False
-        for store in self.stores.values():
-            objects = store.get_objects()
-            for obj in objects:
-                try:
-                    obj.delete(obj_fmt_code)
+        top_objects = self.get_objects(association=0)
+        for obj in top_objects:
+            try:
+                obj.delete(obj_fmt_code)
+                deleted = True
+            except MtpProtocolException as ex:
+                if ex.response == ResponseCodes.PARTIAL_DELETION:
                     deleted = True
-                except MtpProtocolException as ex:
-                    if ex.response == ResponseCodes.PARTIAL_DELETION:
-                        deleted = True
-                    undeleted = True
+                undeleted = True
         if undeleted:
             if deleted:
                 raise MtpProtocolException(ResponseCodes.OBJECT_WRITE_PROTECTED)
             else:
                 raise MtpProtocolException(ResponseCodes.PARTIAL_DELETION)
 
-    def get_handles_for_store_id(self, storage_id, obj_fmt_code):
-        '''
-        :param stores: stores to search in
-        :param obj_fmt_code: format to filter objects by
-        :return: list of handles
-        '''
-        res = []
-        if storage_id == 0xffffffff:
-            relevant_store = list(self.stores.values())
-        else:
-            relevant_store = [self.get_storage(storage_id)]
-        for store in relevant_store:
-            handles = [h for h in store.get_handles() if store.get_object(h).format_matches(obj_fmt_code)]
-            res.extend(handles)
-        return res
+    def get_objects(self, store_id=None, obj_fmt_code=None, association=None):
+        stores = self.get_stores(store_id)
+        objs = []
+        for store in stores:
+            objs.extend(store.get_objects())
+        if obj_fmt_code is not None:
+            objs = [obj for obj in objs if obj.format_matches(obj_fmt_code)]
+        if association is not None:
+            if association:
+                parent = self.get_object(association)
+            else:
+                parent = None
+            objs = [obj for obj in objs if obj.parent == parent]
+        return objs
+
+    def get_handles(self, store_id=None, obj_fmt_code=None, association=None):
+        objs = self.get_objects(store_id, obj_fmt_code, association)
+        return [obj.get_uid() for obj in objs]
 
     def get_object(self, handle):
         '''
@@ -502,29 +491,21 @@ class MtpDevice(object):
             raise MtpProtocolException(ResponseCodes.INVALID_OBJECT_HANDLE)
         return obj
 
-    def get_storage(self, storage_id):
+    def get_stores(self, store_id=None):
+        if (store_id is None) or (store_id == 0xffffffff):
+            return self.stores.values()
+        else:
+            return [self.get_store(store_id)]
+
+    def get_store(self, store_id):
         '''
-        :param storage_id: the storage id to get
+        :param store_id: the storage id to get
         :raises: MtpProtocolException if storage with this id does not exist
         :return: MtpStorage
         '''
-        if storage_id not in self.stores:
+        if store_id not in self.stores:
             raise MtpProtocolException(ResponseCodes.INVALID_STORAGE_ID)
-        return self.stores[storage_id]
-
-    def __str__(self):
-        s = ''
-        for store_id, store in self.stores.items():
-            s += 'Store %#x:\n\t' % (store_id)
-            for handle in store.get_handles():
-                s += '%04x, ' % handle
-        s += '\nproperties:\n\t'
-        for prop in self.properties:
-            s += '%04x, ' % prop
-        s += '\noperations:\n\t'
-        for op in self.operations:
-            s += '%04x, ' % op
-        return s
+        return self.stores[store_id]
 
 
 class MtpDeviceInfo(object):
