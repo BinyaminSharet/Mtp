@@ -85,7 +85,10 @@ class MtpObjectTests(BaseTestCase):
         uut = MtpObject(self.default_data, self.get_default_info())
         for obj in others:
             uut.add_object(obj)
-        self.assertEqual(sorted(uut.get_objects()), sorted(others))
+        objs = uut.get_objects()
+        self.assertEqual(len(objs), len(set(objs)))
+        self.assertEqual(len(objs), len(others))
+        self.assertEqual(set(objs), set(others))
 
     def testGetObjectsMultipleLevels(self):
         others = [
@@ -98,7 +101,10 @@ class MtpObjectTests(BaseTestCase):
         for obj in others:
             cur.add_object(obj)
             cur = obj
-        self.assertEqual(sorted(uut.get_objects()), sorted(others))
+        objs = uut.get_objects()
+        self.assertEqual(len(objs), len(set(objs)))
+        self.assertEqual(len(objs), len(others))
+        self.assertEqual(set(objs), set(others))
 
     def testGetObjectSelfAlone(self):
         uut = MtpObject(self.default_data, self.get_default_info())
