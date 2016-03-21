@@ -3,7 +3,7 @@ from .mtp_data_types import UInt16, UInt32, MStr, MArray
 from .mtp_proto import OperationDataCodes, ResponseCodes, mtp_data, ContainerTypes
 from .mtp_object import MtpObjectInfo, MtpObject
 from .mtp_exception import MtpProtocolException
-from binascii import hexlify
+from binascii import hexlify, unhexlify
 import struct
 import logging
 
@@ -34,7 +34,7 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
             self.logger.info('[MtpDevice] handling command: %#x (%s)' % (command.code, name))
             self.logger.info('[MtpDevice] params: %s' % (' '.join('%#x' % command.get_param(i) for i in range(command.num_params()))))
             if ir_data:
-                self.logger.info('[MtpDevice] I->R data: %s' % (hexlify(ir_data.data)))
+                self.logger.info('[MtpDevice] I->R data (%s): %s' % (len(ir_data), hexlify(ir_data.data[12:60])))
             res = None
             if self.fuzzer:
                 res = self.fuzzer.get_mutation(
@@ -61,7 +61,9 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
                     response.code = ex.response
                     res = None
             if res and len(res) > 12:
-                self.logger.info('[MtpDevice] R->I data: %s' % (hexlify(res[12:60])))
+                pad = '...' if len(res) > 60 else ''
+                self.logger.info('[MtpDevice] R->I data(%s): %s %s' % (len(res), hexlify(res[12:60]), pad))
+                # self.logger.info('[MtpDevice] R->I data(%s): %s' % (len(res), hexlify(res)))
             self.logger.info('[MtpDevice] response: %#x' % response.code)
             return res
 
