@@ -34,7 +34,7 @@ def operation(opcode, name, num_params=None, session_required=True, ir_data_requ
             self.logger.info('[MtpDevice] handling command: %#x (%s)' % (command.code, name))
             self.logger.info('[MtpDevice] params: %s' % (' '.join('%#x' % command.get_param(i) for i in range(command.num_params()))))
             if ir_data:
-                self.logger.info('[MtpDevice] I->R data (%s): %s' % (len(ir_data), hexlify(ir_data.data[12:60])))
+                self.logger.info('[MtpDevice] I->R data (%s): %s' % (len(ir_data.data), hexlify(ir_data.data[12:60])))
             res = None
             if self.fuzzer:
                 res = self.fuzzer.get_mutation(
