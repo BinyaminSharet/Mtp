@@ -467,7 +467,7 @@ class MtpDevice(object):
         if obj_fmt_code is not None:
             objs = [obj for obj in objs if obj.format_matches(obj_fmt_code)]
         if association is not None:
-            if association:
+            if association and (association != 0xffffffff):
                 parent = self.get_object(association)
             else:
                 parent = None
